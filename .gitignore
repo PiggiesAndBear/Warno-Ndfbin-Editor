@@ -1,0 +1,50 @@
+# --- build output ---------------------------------------------------------
+# `dist/` holds the released binary and `dist_<ver>/` the candidate for the
+# version being built; neither belongs in git.  A 37 MB one-file EXE would make
+# every clone heavy, and because git keeps every blob forever, each future
+# version would add another 37 MB to the history.  Releases are attached to a
+# GitHub Release instead -- see the README.
+dist/
+dist_*/
+build/
+build_*/
+
+# --- python ---------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# --- tooling --------------------------------------------------------------
+# Editor/agent scratch space: memory logs and per-session state, not sources.
+.workbuddy/
+.vscode/
+.idea/
+
+# --- internal recon -------------------------------------------------------
+# Reconnaissance reports quote one specific mod's organisation, unit counts
+# and naming quirks.  They are development notes for this editor, not
+# documentation for whoever installs it, so they stay local.  The manual,
+# `doc/NDFBIN编辑器使用说明.md`, *is* shipped -- the pattern stays deliberately
+# narrow.
+doc/*勘查报告.md
+
+# --- third-party material --------------------------------------------------
+# A decompiled copy of someone else's moddingSuite, its installer and tutorial
+# documents, and the IL dumps taken beside them.  Useful while working out the
+# format; none of it is ours to redistribute.
+moddingSuite_reverse(OLD)/
+
+# --- build products that are not the EXE -----------------------------------
+# The packaged manual is generated from doc/*.md and doc/ui截图-*.png, both of
+# which are already in the tree -- keeping a copy here would be 5 MB of
+# duplicate that goes stale.  It belongs on a GitHub Release.
+doc/WarnoNdfbinEditor说明文档/
+doc/*.zip
+
+# --- strays ----------------------------------------------------------------
+*.log
+*.bak
+

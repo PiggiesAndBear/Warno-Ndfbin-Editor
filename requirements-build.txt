@@ -1,0 +1,10 @@
+# Tooling needed only to build the release EXE, on top of requirements.txt.
+#
+#   py -3 -m venv .venv-build
+#   .venv-build\Scripts\pip install -r requirements.txt -r requirements-build.txt
+#   .venv-build\Scripts\python build_exe.py
+#
+# Kept separate because nothing at runtime needs PyInstaller, and PyInstaller
+# pins are the kind of thing that breaks an unrelated `pip install -U`.
+-r requirements.txt
+pyinstaller>=5.13,<7

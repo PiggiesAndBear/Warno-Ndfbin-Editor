@@ -1,0 +1,13 @@
+# Runtime dependencies for the editor itself.
+#
+# PySide6 is named as the metapackage because that is what people already have
+# and what every tutorial says to install.  Only three modules are ever
+# imported -- QtCore, QtGui, QtWidgets, all of which live in the Essentials
+# half -- so the packaged build excludes the rest; the installed size on a
+# development machine is not worth diverging from the conventional name over.
+PySide6>=6.3,<7
+
+# The two compression codecs a WARNO .ndfbin / .dic actually uses: zstandard is
+# the outer CNDF container, lz4 the inner blocks of a .dic dictionary.
+zstandard>=0.21
+lz4>=4.3

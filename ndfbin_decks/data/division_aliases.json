@@ -1,0 +1,240 @@
+{
+  "comment": "deck 侧的 DeckDivision 名与 BattleOrder 节点名是两套命名。本表把前者映射到后者，每条的判据见 evidence —— 错映射比不映射更糟，它会把一个营静静归到错误的军下，所以只收录有据可查的对应。生成：tools/probe_org.py join + 逐条核对；见 doc/部队组织架构勘查报告.md",
+  "evidence_codes": {
+    "emblem": "师描述符的 EmblemTexture 直接写着编制树的拼法",
+    "prefix": "deck 侧省略了父军前缀，而描述符的徽章正是该军",
+    "abbr": "同一编号同一兵种的缩写（194ArmBrig → 194ArmBr）",
+    "norm": "纯书写差异（RFA_TK_Nord → RFA_TKNord）",
+    "attach": "deck 侧带 US_ 前缀，实为编入美军建制的盟军部队"
+  },
+  "aliases": {
+    "BEL_16de_PtserDiv": {
+      "node": "BEL_16PtserDiv",
+      "why": "emblem"
+    },
+    "ESP_Brigada_Jarama": {
+      "node": "ESP_Jarama",
+      "why": "emblem"
+    },
+    "ESP_Division_Brunete": {
+      "node": "ESP_Brun",
+      "why": "emblem"
+    },
+    "POL_23ArtGr": {
+      "node": "POL_23Art",
+      "why": "abbr"
+    },
+    "POL_24ArtGr": {
+      "node": "POL_24Art",
+      "why": "abbr"
+    },
+    "POL_3_DLMB": {
+      "node": "POL_3DLMB",
+      "why": "norm"
+    },
+    "POL_5ArtGr": {
+      "node": "POL_5Art",
+      "why": "abbr"
+    },
+    "POL_6AirBrig": {
+      "node": "POL_6Airborne",
+      "why": "abbr"
+    },
+    "POL_6ArtGr": {
+      "node": "POL_6Art",
+      "why": "abbr"
+    },
+    "POL_7ArtGr": {
+      "node": "POL_7Art",
+      "why": "abbr"
+    },
+    "POL_7NavalBrig": {
+      "node": "POL_7Marine",
+      "why": "abbr"
+    },
+    "POL_8ArtGr": {
+      "node": "POL_8Art",
+      "why": "abbr"
+    },
+    "RDA_ArtRgt40": {
+      "node": "RDA_MBIII_40ArtBrig",
+      "why": "prefix"
+    },
+    "RDA_LStR40": {
+      "node": "RDA_MBIII_LStR40",
+      "why": "norm"
+    },
+    "RDA_MBDIII": {
+      "node": "RDA_MBIII",
+      "why": "emblem"
+    },
+    "RDA_MBDV": {
+      "node": "RDA_MBV",
+      "why": "emblem"
+    },
+    "RFA_1Korps": {
+      "node": "RFA_1K",
+      "why": "emblem"
+    },
+    "RFA_26AB": {
+      "node": "RFA_26LuftBrig",
+      "why": "emblem"
+    },
+    "RFA_2Korps": {
+      "node": "RFA_2K",
+      "why": "emblem"
+    },
+    "RFA_3EngBrig": {
+      "node": "RFA_3K_3EngBrig",
+      "why": "prefix"
+    },
+    "RFA_3FlakBrig": {
+      "node": "RFA_3K_3FlakBrig",
+      "why": "prefix"
+    },
+    "RFA_3HFG": {
+      "node": "RFA_3K_3HFG",
+      "why": "prefix"
+    },
+    "RFA_3Korps": {
+      "node": "RFA_3K",
+      "why": "emblem"
+    },
+    "RFA_FlaKdo2": {
+      "node": "RFA_2K_FlaKdo2",
+      "why": "prefix"
+    },
+    "RFA_TK_Nord": {
+      "node": "RFA_TKNord",
+      "why": "norm"
+    },
+    "RFA_TK_Sud": {
+      "node": "RFA_TKSud",
+      "why": "norm"
+    },
+    "SOV_290ArtBrig": {
+      "node": "SOV_2GTA_290ArtBrig",
+      "why": "prefix"
+    },
+    "SOV_308ArtBr": {
+      "node": "SOV_1GTA_308ArtBr",
+      "why": "prefix"
+    },
+    "SOV_34ArtDiv": {
+      "node": "SOV_8GA_34ArtDiv",
+      "why": "prefix"
+    },
+    "SOV_390ArtBr": {
+      "node": "SOV_8GA_390ArtBr",
+      "why": "prefix"
+    },
+    "US_11AviaBrig": {
+      "node": "US_7C_11AviaBrig",
+      "why": "prefix"
+    },
+    "US_12AviaGroup": {
+      "node": "US_5C_12AviaBrig",
+      "why": "prefix"
+    },
+    "US_130Eng": {
+      "node": "US_5C_130EngBrig",
+      "why": "prefix"
+    },
+    "US_14MPBrig": {
+      "node": "US_7C_14MPBrig",
+      "why": "prefix"
+    },
+    "US_17ABCorps": {
+      "node": "US_17C",
+      "why": "emblem"
+    },
+    "US_17ArtBrig": {
+      "node": "US_7C_17ArtBrig",
+      "why": "prefix"
+    },
+    "US_18Eng": {
+      "node": "US_18_EngBri",
+      "why": "abbr"
+    },
+    "US_18MPBrig": {
+      "node": "US_5C_18MPBrig",
+      "why": "prefix"
+    },
+    "US_194ArmBrig": {
+      "node": "US_194ArmBr",
+      "why": "abbr"
+    },
+    "US_197MechBrig": {
+      "node": "US_197MechBr",
+      "why": "abbr"
+    },
+    "US_1Arm": {
+      "node": "US_1AD",
+      "why": "emblem"
+    },
+    "US_1Inf": {
+      "node": "US_1ID",
+      "why": "emblem"
+    },
+    "US_210ArtBrig": {
+      "node": "US_7C_210ArtBrig",
+      "why": "prefix"
+    },
+    "US_2Arm": {
+      "node": "US_2AD",
+      "why": "emblem"
+    },
+    "US_3Arm": {
+      "node": "US_3AD",
+      "why": "emblem"
+    },
+    "US_3Corps": {
+      "node": "US_3C",
+      "why": "emblem"
+    },
+    "US_3Inf": {
+      "node": "US_3ID",
+      "why": "emblem"
+    },
+    "US_41FABrig": {
+      "node": "US_5C_41ArtBrig",
+      "why": "prefix"
+    },
+    "US_42FABrig": {
+      "node": "US_5C_42ArtBrig",
+      "why": "prefix"
+    },
+    "US_5Corps": {
+      "node": "US_5C",
+      "why": "emblem"
+    },
+    "US_72ArtBrig": {
+      "node": "US_7C_72ArtBrig",
+      "why": "prefix"
+    },
+    "US_7Corps": {
+      "node": "US_7C",
+      "why": "emblem"
+    },
+    "US_7Eng": {
+      "node": "US_7EngBrig",
+      "why": "abbr"
+    },
+    "US_8Inf": {
+      "node": "US_8ID",
+      "why": "emblem"
+    },
+    "US_BEL_1BEC": {
+      "node": "BEL_1BEC",
+      "why": "attach"
+    },
+    "US_UK_1BrC": {
+      "node": "UK_1BrC",
+      "why": "attach"
+    },
+    "US_UK_3ArmDiv": {
+      "node": "UK_3ArmDiv",
+      "why": "attach"
+    }
+  }
+}

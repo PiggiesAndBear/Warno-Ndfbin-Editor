@@ -1,0 +1,35 @@
+# Line endings ---------------------------------------------------------------
+#
+# A fresh clone has to produce the same bytes on every machine.  The test suite
+# loads real game files and compares decoded values, and the icon generator
+# writes a binary container byte by byte — implicit, platform-dependent
+# rewriting is the kind of thing that turns into "works on my machine".
+#
+# So: normalise to LF *in the repository*, and convert on checkout only where
+# a consumer actually needs it.
+
+* text=auto eol=lf
+
+# cmd.exe reads these.  An LF-only .bat can mis-parse its own `goto` targets,
+# and this one is full of them.
+*.bat text eol=crlf
+
+# Binary — never diff, never convert.  Git detects most of these on its own;
+# "most" is not worth a mangled screenshot in the history.
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.zip binary
+*.ndfbin binary
+*.dic binary
+
+# Text, stated explicitly so a later edit to the rules above cannot silently
+# re-decide for the file types that matter most.
+*.py text
+*.md text
+*.json text
+*.txt text
+*.spec text
+*.bat text
