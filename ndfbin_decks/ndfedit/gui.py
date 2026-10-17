@@ -203,40 +203,121 @@ def describe_target(nd, rf, btn: QPushButton, index=None) -> None:
 
 
 class ClassList(QListWidget):
-    """左栏：类列表，带对象数与可改字段数。"""
+    """左栏：类列表，带对象数与可改字段数，可按类名过滤。
+
+    **过滤后行号不再等于 ``_infos`` 的下标**，所以 :meth:`info_at` 查的是
+    ``_visible``。这一点很容易漏 —— 漏了就是「点 A 类、右边显示 B 类」，
+    而且只有当过滤词非空时才复现。
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._infos: list[ClassInfo] = []
+        #: 当前**显示**的那些类（过滤后）。``info_at`` 按它取。
+        self._visible: list[ClassInfo] = []
+        #: 已转小写的过滤词。空串 = 不过滤。
+        self._filter = ""
         self._rebuilding = False
 
     def load(self, infos: list[ClassInfo]):
         self._infos = infos
+        # 换文件时把过滤一并清掉：过滤词是针对上一个文件找的，留着可能
+        # 把新文件的类全藏起来（界面上只剩一行「没有匹配的类」）。
+        self._filter = ""
+        # emit=False：整表装载**不自己选第一行**。选哪个类由 load_path 决定
+        # （它要挑第一个有可编辑字段的），而且它紧接着会把中间栏和字段
+        # 面板清空 —— 这里先选中一次只会被那一清空抹掉，结果就是
+        # 「类列表有 57 项，对象列表 0 项」。
+        self._rebuild(emit=False)
+
+    def set_filter(self, text: str) -> None:
+        """按类名过滤。空串 = 显示全部。不区分大小写，匹配子串。"""
+        low = (text or "").strip().lower()
+        if low == self._filter:
+            return
+        self._filter = low
+        self._rebuild(emit=True)
+
+    @property
+    def filter_text(self) -> str:
+        return self._filter
+
+    @property
+    def visible_count(self) -> int:
+        """过滤后还剩几个类（状态栏用）。"""
+        return len(self._visible)
+
+    def _matches(self, info: ClassInfo) -> bool:
+        return not self._filter or self._filter in info.name.lower()
+
+    def _rebuild(self, *, emit: bool) -> None:
+        # 记类名而不是行号。**按行号判断会漏**：过滤后第 0 行常常还是
+        # 「第 0 行」，但那一行装的已经是另一个类了（搜「Weapon」只剩 1 项，
+        # 正好落在 0），于是不发信号 → 右栏和状态栏停在过滤前的那个类上，
+        # 而左栏显示的是新类。
+        keep = self._current_name()
+        self._visible = [i for i in self._infos if self._matches(i)]
+
+        # 重建期间屏蔽信号：``clear()`` 会发一次 currentRowChanged(-1)，
+        # 那一下会把右栏和字段面板清空再填回来，看着闪。
+        self.blockSignals(True)
         self.clear()
-        for info in infos:
-            if info.field_count == 0:
-                label = f"{info.name}  ×{info.count}"
-                item = QListWidgetItem(label)
-                item.setForeground(QColor(130, 130, 130))
-                item.setToolTip("这个类没有可编辑的数值字段")
-                item.setData(Qt.UserRole, None)
-            else:
-                label = f"{info.name}  ×{info.count}   ({info.field_count} 字段)"
-                item = QListWidgetItem(label)
-                item.setData(Qt.UserRole, info.name)
-                item.setToolTip(
-                    "\n".join(f"{humanize(n)}  {k}  ({c * 100:.0f}%)"
-                              for n, k, c in info.fields[:24]))
-            self.addItem(item)
+        for info in self._visible:
+            self._add_item(info)
+        if not self._visible:
+            hint = QListWidgetItem("（没有匹配的类）")
+            hint.setForeground(QColor(130, 130, 130))
+            hint.setFlags(Qt.NoItemFlags)          # 不可选
+            self.addItem(hint)
+        elif emit:
+            # 过滤时要自己决定选哪一行：当前类还在就留在原处，被滤掉了
+            # 就落到第一个 —— 否则右栏会停在一个左栏已经看不见的类上。
+            # 整表装载（emit=False）不走这里，选中由调用方决定。
+            target = 0
+            if keep:
+                for row, info in enumerate(self._visible):
+                    if info.name == keep:
+                        target = row
+                        break
+            self.setCurrentRow(target)
+        self.blockSignals(False)
+
+        if emit and self._current_name() != keep:
+            self.currentRowChanged.emit(self.currentRow())
+
+    def _add_item(self, info: ClassInfo) -> None:
+        if info.field_count == 0:
+            label = f"{info.name}  ×{info.count}"
+            item = QListWidgetItem(label)
+            item.setForeground(QColor(130, 130, 130))
+            item.setToolTip("这个类没有可编辑的数值字段")
+            item.setData(Qt.UserRole, None)
+        else:
+            label = f"{info.name}  ×{info.count}   ({info.field_count} 字段)"
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, info.name)
+            item.setToolTip(
+                "\n".join(f"{humanize(n)}  {k}  ({c * 100:.0f}%)"
+                          for n, k, c in info.fields[:24]))
+        self.addItem(item)
+
+    def _current_name(self) -> str | None:
+        row = self.currentRow()
+        if 0 <= row < len(self._visible):
+            return self._visible[row].name
+        return None
 
     def refresh_counts(self):
         """只更新「×N」里的数字，不动选择。
 
         克隆对象（或撤销克隆）会让某个类的对象数变一变，而类列表在这里
         显示它。整表 ``load()`` 会丢掉当前选中行，所以走这条轻路。
+
+        只更新**可见**的那些：过滤生效时 ``item(i)`` 与 ``_infos[i]`` 不再
+        一一对应，照 ``_infos`` 的下标去改会串行。
         """
-        for i, info in enumerate(self._infos):
-            item = self.item(i)
+        for row, info in enumerate(self._visible):
+            item = self.item(row)
             if item is None:
                 continue
             if info.field_count == 0:
@@ -246,12 +327,13 @@ class ClassList(QListWidget):
                     f"{info.name}  ×{info.count}   ({info.field_count} 字段)")
 
     def info_at(self, row: int):
-        if 0 <= row < len(self._infos):
-            return self._infos[row]
+        if 0 <= row < len(self._visible):
+            return self._visible[row]
         return None
 
     @property
     def count(self) -> int:
+        """类的总数（不受过滤影响）。"""
         return len(self._infos)
 
 
@@ -2661,9 +2743,24 @@ class MainWindow(QMainWindow):
 
     def _build_body(self):
         split = QSplitter(Qt.Horizontal)
+        # 左栏 = 类名搜索框 + 类列表。类多的文件（Weapon.ndfbin 一百多个类）
+        # 全列出来只能靠滚动找，而玩家心里往往已经知道类名的一半。
+        left = QWidget()
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(2)
+        self.class_search = QLineEdit()
+        self.class_search.setPlaceholderText("搜类名（如 Descriptor）")
+        self.class_search.setClearButtonEnabled(True)
+        self.class_search.setToolTip(
+            "按类名过滤左栏：不区分大小写，匹配子串。\n"
+            "例：搜「Weapon」能一次看到所有含 Weapon 的类。")
+        self.class_search.textChanged.connect(self._on_class_filter)
+        lv.addWidget(self.class_search)
         self.cls = ClassList()
         self.cls.currentRowChanged.connect(self.on_class)
-        split.addWidget(self.cls)
+        lv.addWidget(self.cls, 1)
+        split.addWidget(left)
 
         mid = QSplitter(Qt.Horizontal)
         self.objs = ObjectList()
@@ -2845,6 +2942,12 @@ class MainWindow(QMainWindow):
         self.path_label.setText(path.name)
         self.path_label.setToolTip(str(path))
         self.path_label.setStyleSheet("color:#bbb;")
+        # 类过滤也要清：过滤词是针对上一个文件找的，留着可能把新文件的类
+        # 全藏起来。blockSignals 是因为紧接着 cls.load() 自己会重置过滤并
+        # 重建一次 —— 没必要先按旧数据重建一遍。
+        self.class_search.blockSignals(True)
+        self.class_search.clear()
+        self.class_search.blockSignals(False)
         self.cls.load(nd.classes)
         self.objs.load([])
         self.panel.build_for(None)
@@ -2872,12 +2975,28 @@ class MainWindow(QMainWindow):
             f"{self.nd.path.name} · {len(self.nd.decoded['objects'])} 个对象 · "
             f"{len(self.nd.classes)} 个类（{len(editable)} 个含可改字段{extra}）")
 
+    def _on_class_filter(self, text: str) -> None:
+        """左栏按类名过滤。
+
+        选中行的变化由 :class:`ClassList` 自己发 ``currentRowChanged`` ——
+        它知道「当前类被过滤掉了要落到第一个」，这里不重复判断。
+        """
+        self.cls.set_filter(text)
+
     def on_class(self, row: int):
         info = self.cls.info_at(row)
         if info is None or self.nd is None:
             self.objs.load([])
             self.panel.build_for(None)
             self.panel.show_entry(None, None)
+            if (self.nd is not None and self.cls.filter_text
+                    and self.cls.visible_count == 0):
+                # 过滤到空：状态栏必须说清楚。不说的话它会停在上一个类的
+                # 「显示 2265 / 2265 个对象」，看着像筛选没生效。
+                self.status.setText(
+                    f"{self.nd.path.name} · 没有类名包含"
+                    f"「{self.class_search.text().strip()}」"
+                    f"· 共 {self.cls.count} 个类")
             return
         self._current_class = info.name
         self.nd.ensure_titles(info.name)
@@ -2893,9 +3012,16 @@ class MainWindow(QMainWindow):
         shown = self.objs.count
         info = self.nd.class_info(self._current_class)
         fields = info.field_count if info else 0
+        extra = ""
+        if self.class_search.text().strip():
+            # 过滤生效时不写这一句，玩家会以为「这个文件只有 8 个类」。
+            # 用搜索框原文而不是小写后的过滤词 —— 后者是内部表示。
+            extra = (f"　·　类名筛出 {self.cls.visible_count}"
+                     f" / {self.cls.count}")
         self.status.setText(
             f"{self.nd.path.name} · 当前类 {self._current_class} · "
-            f"显示 {shown} / {total} 个对象 · 该类有 {fields} 个可改字段")
+            f"显示 {shown} / {total} 个对象 · 该类有 {fields} 个可改字段"
+            f"{extra}")
 
     def on_search(self, text: str):
         if self.nd is None or not self._current_class:

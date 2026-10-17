@@ -8,6 +8,7 @@ Weapon / Unit / Deck / Division 四个差异极大的文件都跑一遍，
 import os
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -238,6 +239,123 @@ def main() -> int:
         check("标题含弹药类型标识",
               any("Missile" in t or "Shell" in t or "Rocket" in t
                   or "Bomb" in t for t in titles), str(titles[:3]))
+
+    # 类多的文件（Unit.ndfbin 102 个类）光靠滚动找太慢，所以左栏加了
+    # 一个类名过滤框。这里测的不只是「能过滤」——**过滤之后行号不再等于
+    # `_infos` 的下标**，漏掉这一点就是「点 A 类、右边显示 B 类」。
+    print("\n=== 类名搜索框 ===")
+    big = SRC / "Unit.ndfbin"
+    if not big.is_file():
+        check("Unit.ndfbin 存在（类名搜索要在类多的文件上测）", False)
+    else:
+        tmp = Path(tempfile.mkdtemp(prefix="classsearch_"))
+        try:
+            dst = tmp / "Unit.ndfbin"
+            shutil.copy2(big, dst)
+            win = MainWindow()
+            win.load_path(dst)
+            app.processEvents()
+
+            total = win.cls.count
+            check("类搜索框已接上", hasattr(win, "class_search"))
+            check("初始不过滤", win.cls.visible_count == total,
+                  f"{win.cls.visible_count}/{total}")
+
+            win.class_search.setText("Descriptor")
+            app.processEvents()
+            vis = win.cls.visible_count
+            check("过滤后可见数变少但没空", 0 < vis < total, f"{vis}/{total}")
+            check("过滤词按小写存", win.cls.filter_text == "descriptor",
+                  win.cls.filter_text)
+            check("可见项都含过滤词",
+                  all("descriptor" in win.cls.item(i).text().lower()
+                      for i in range(vis)))
+
+            # ★ 行号不再等于 _infos 下标：点第 N 行必须落到第 N 个**可见**类
+            row = min(4, vis - 1)
+            win.cls.setCurrentRow(row)
+            app.processEvents()
+            shown = win.cls.item(row).text().split("  ")[0]
+            check("点第 N 行落到第 N 个可见类上",
+                  win._current_class == shown,
+                  f"{win._current_class} vs 列表项 {shown}")
+            check("中间栏装的是那个类的对象",
+                  win.objs.count == len(win.nd.entries(shown)),
+                  f"{win.objs.count} vs {len(win.nd.entries(shown))}")
+
+            win.class_search.setText("DESCRIPTOR")
+            app.processEvents()
+            check("大小写不敏感", win.cls.visible_count == vis,
+                  f"{win.cls.visible_count} vs {vis}")
+
+            # ★ 行号不变、内容变了。两个「各只命中 1 个类」的过滤词连着用：
+            # 两次都落第 0 行，但那是两个不同的类。按行号判断「有没有变」会
+            # 漏掉第二次 —— 右栏和状态栏停在第一个类上，左栏却显示第二个。
+            singles = [c.name for c in win.nd.classes
+                       if sum(1 for o in win.nd.classes
+                              if c.name.lower() in o.name.lower()) == 1][:2]
+            if len(singles) == 2:
+                for word in singles:
+                    win.class_search.setText(word)
+                    app.processEvents()
+                    check(f"过滤「{word[:24]}」只剩 1 个类",
+                          win.cls.visible_count == 1,
+                          str(win.cls.visible_count))
+                    check(f"选中落到它（行号仍然是 0）",
+                          win._current_class == word,
+                          f"{win._current_class} vs {word}")
+            else:
+                check("找得到两个各命中 1 个类的词（上面两项的前提）", False,
+                      f"{len(singles)} 个")
+
+            # 过滤到空：列表要给一行提示，状态栏也要说清楚，否则它会停在
+            # 上一个类的「显示 N / N 个对象」，看着像筛选没生效。
+            win.class_search.setText("zzz_nothing_here")
+            app.processEvents()
+            check("过滤到空时可见 0", win.cls.visible_count == 0)
+            check("空结果有一行不可选的提示",
+                  win.cls.item(0) is not None
+                  and "没有匹配" in win.cls.item(0).text()
+                  and win.cls.info_at(0) is None,
+                  win.cls.item(0).text() if win.cls.item(0) else "None")
+            check("过滤到空时状态栏说清楚了",
+                  "没有类名包含" in win.status.text(),
+                  win.status.text()[:70])
+
+            win.class_search.clear()
+            app.processEvents()
+            check("清空后恢复全部类", win.cls.visible_count == total,
+                  f"{win.cls.visible_count}/{total}")
+
+            # 过滤生效时 refresh_counts 只能按可见项更新 —— 它还照 _infos
+            # 的下标改，文本就会串行（第 3 行显示第 3 个**全部**类的计数）。
+            win.class_search.setText("Descriptor")
+            app.processEvents()
+            before = [win.cls.item(i).text()
+                      for i in range(win.cls.visible_count)]
+            win.cls.refresh_counts()
+            after = [win.cls.item(i).text()
+                     for i in range(win.cls.visible_count)]
+            check("过滤时 refresh_counts 不会把文本改串", before == after,
+                  f"{len(before)} 项")
+
+            # 换文件：过滤词是针对上一个文件找的，留着可能把新文件的类全藏起来
+            deck = SRC / "Deck.ndfbin"
+            if deck.is_file():
+                shutil.copy2(deck, tmp / "Deck.ndfbin")
+                win.load_path(tmp / "Deck.ndfbin")
+                app.processEvents()
+                check("换文件后过滤被清掉",
+                      win.cls.filter_text == ""
+                      and win.class_search.text() == ""
+                      and win.cls.visible_count == win.cls.count,
+                      f"{win.cls.visible_count}/{win.cls.count}")
+
+            win.close()
+            win.deleteLater()
+            app.processEvents()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
 
     print("\n" + "=" * 52)
     print(f"通过 {len(PASS)} / {len(PASS) + len(FAIL)}")
