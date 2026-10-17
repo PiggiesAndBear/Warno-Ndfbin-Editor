@@ -83,7 +83,7 @@ def _ref_id(obj: dict, name: str) -> int | None:
     return None
 
 
-def _module_ids(obj: dict) -> list[int]:
+def module_ids(obj: dict) -> list[int]:
     """``ModulesDescriptors`` 里的 object_id 列表（按原顺序）。"""
     v = _prop(obj, MODULES_FIELD)
     if not isinstance(v, dict) or "items" not in v:
@@ -315,7 +315,7 @@ def build_pawns(nd: NdfDocument) -> list[PawnView]:
     for obj in objs:
         if obj.get("class") != PAWN_CLASS:
             continue
-        mod_ids = _module_ids(obj)
+        mod_ids = module_ids(obj)
         modules: dict[str, int] = {}
         sharing: dict[str, int] = {}
         values: dict = {}

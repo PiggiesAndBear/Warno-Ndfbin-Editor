@@ -2789,7 +2789,9 @@ class MainWindow(QMainWindow):
         dlg = self._tool_windows.get("ag")
         if dlg is None:
             dlg = AgPage(self.nd, self)
-            # 关掉时也刷一次：主界面底部的「已改动 N 个对象」得跟上。
+            # 改完立刻通知主界面：底部的「已改动 N 个对象」和保存按钮要跟上。
+            dlg.dirtyApplied.connect(self._on_entry_dirty)
+            # 关掉时也刷一次：玩家可能在别处又改了。
             dlg.finished.connect(lambda _code: self._on_entry_dirty())
             self._tool_windows["ag"] = dlg
         else:
