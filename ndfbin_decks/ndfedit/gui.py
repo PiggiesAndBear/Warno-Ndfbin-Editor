@@ -2791,6 +2791,11 @@ class MainWindow(QMainWindow):
             dlg = AgPage(self.nd, self)
             # 改完立刻通知主界面：底部的「已改动 N 个对象」和保存按钮要跟上。
             dlg.dirtyApplied.connect(self._on_entry_dirty)
+            # 撤销 / 重做转发回主窗口。历史归主窗口管（撤销之后要重画的
+            # 不止这一页），而主窗口的 Ctrl+Z 快捷键作用域是主窗口本身，
+            # 在这一页的窗口里按没有反应——所以这一页得自己有入口。
+            dlg.undoRequested.connect(self.on_undo)
+            dlg.redoRequested.connect(self.on_redo)
             # 关掉时也刷一次：玩家可能在别处又改了。
             dlg.finished.connect(lambda _code: self._on_entry_dirty())
             self._tool_windows["ag"] = dlg

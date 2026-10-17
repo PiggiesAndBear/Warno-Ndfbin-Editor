@@ -371,7 +371,25 @@ class History:
 
     def _apply(self, step: Step, *, forward: bool) -> None:
         i = 1 if forward else 0
-        for oid, keys in step.delta.items():
+        # 顺序有语义，不能依赖 dict 的偶然次序。:func:`_delta` 是用
+        # ``set(before) | set(after)`` 攒出来的，那个顺序由哈希决定，
+        # 每一步都可能不同。
+        #
+        # 重做：先让克隆体存在，再让引用指向它。
+        # 撤销：先把引用指回去，最后才砍掉克隆体——``set_appended_count``
+        # 会拒绝砍掉一个还被引用着的对象，而那句拒绝是对的（它挡住的正是
+        # 「文件里留下一个指向不存在对象的引用」）。
+        #
+        # 只有一步里同时含「克隆」和「改指向」时才会踩到。AG 页的批量改
+        # 正是这种：一次 ``apply_attr`` 就克隆 + 重指向 + 改值，只提交一次。
+        # 通用编辑器那边克隆与替换是分开的两步，顺序天然正确，所以这个
+        # 缺陷一直没露出来。
+        def order(item: tuple[int, dict]) -> int:
+            if item[0] == _APPEND_SLOT:
+                return 0 if forward else 1
+            return 1 if forward else 0
+
+        for oid, keys in sorted(step.delta.items(), key=order):
             if oid == _APPEND_SLOT:
                 for key, pair in keys.items():
                     self._write(None, key, pair[i])

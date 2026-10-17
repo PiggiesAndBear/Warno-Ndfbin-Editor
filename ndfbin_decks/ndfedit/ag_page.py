@@ -1,13 +1,20 @@
 # -*- coding: utf-8 -*-
 """将军模式牌组属性 —— 第二个专用编辑页。
 
-**P0 阶段：只看不改。** 这一页现在能列出全部营、按名称维度筛、把战略属性
-并排看；编辑与批量改是 P1 的事。界面上把这句写明了，不让人以为改不动是坏了。
+**名称维度定候选池，属性条件定这一批。** 上面按国家前缀 / 上级编制 / 营名筛，
+下面可以叠任意多条属性条件（AND）；「应用到当前这批」把某个属性一次改成
+同一个值。两者最后合并成一个筛选结果，所以「筛」和「改」永远指的是同一批营 ——
+这也是批量改最容易出错的地方（筛的是 A、改的是 B）。
 
-**读的是投影，不是 pawn 本身。** 战略属性挂在 pawn 引用的模块对象上
+**改的是投影，落盘的是模块。** 战略属性挂在 pawn 引用的模块对象上
 （``ModulesDescriptors``），pawn 自己几乎是空的。所以这一页的值全部来自
-:mod:`ndfedit.ag_view` 那张投影表 —— 也正因为如此，「按字段筛」这种通用能力
-才能原样用在它上面。
+:mod:`ndfedit.ag_view` 那张投影表，写入走 :mod:`ndfedit.ag_edit` 的
+clone-on-write（只命中一部分时先克隆模块，否则会误伤共用同一个模块的营）。
+
+**撤销走主窗口那一套。** 本页不自己记历史——:class:`history.History` 用脏状态
+差分，改完调 ``dirtyApplied``，主窗口统一 ``commit()``。撤销 / 重做由本页的
+按钮与快捷键转发给主窗口，撤销后主窗口会回调 :meth:`AgPage.refresh` 重画；
+**不重画的话格子里的数字还是撤销前那个，玩家会以为撤销没生效然后再改一次。**
 
 **要打开 ``Pawn.ndfbin``。** 战略属性全在这一个文件里，``Deck.ndfbin`` 只装
 编制（连/排/槽位），不含任何战略属性。打开错文件时给一句人话，而不是空表。
@@ -16,7 +23,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QDoubleSpinBox, QFrame,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget,
@@ -173,12 +180,19 @@ class AgPage(QDialog):
 
     #: 数据被改过，主界面要刷新「已改动 N 个对象」。
     dirtyApplied = Signal()
+    #: 请求撤销 / 重做。本页不自己操作历史——历史归主窗口，
+    #: 因为撤销之后要重画的远不止这一页（类计数、对象列表、状态栏）。
+    undoRequested = Signal()
+    redoRequested = Signal()
 
     def __init__(self, nd: NdfDocument, parent=None):
         super().__init__(parent)
         self.nd = nd
         self.pawns: list[PawnView] = []
         self._shown: list[PawnView] = []
+        #: 表格里**实际显示的顺序**（已排序）。撤销后要按 identifier 找回
+        #: 选中行，而那需要一份「行号 → 营」的映射，``_shown`` 是未排序的。
+        self._rows: list[PawnView] = []
         #: 属性条件行（AND）。名称维度定「候选池」，它们定「这一批」。
         self._conds: list[_CondRow] = []
         #: 当前排序列与方向（None = 保持文件里的原顺序）。
@@ -322,25 +336,103 @@ class AgPage(QDialog):
         self.note = QLabel("")
         self.note.setStyleSheet("color:#999;")
         foot.addWidget(self.note, 1)
+        # 撤销 / 重做。本页是独立顶层窗口，主窗口挂在 QShortcut 上的
+        # Ctrl+Z 作用域是主窗口，在这里按是**没有反应**的——所以这一页
+        # 必须自己有入口，否则「改错了」在这个窗口里无从挽回。
+        self.btn_undo = QPushButton("撤销")
+        self.btn_undo.clicked.connect(lambda: self.undoRequested.emit())
+        self.btn_redo = QPushButton("重做")
+        self.btn_redo.clicked.connect(lambda: self.redoRequested.emit())
+        foot.addWidget(self.btn_undo)
+        foot.addWidget(self.btn_redo)
         btn_close = QPushButton("关闭")
         btn_close.clicked.connect(self.accept)
         foot.addWidget(btn_close)
         root.addLayout(foot)
+        self._build_shortcuts()
+        self._update_undo_buttons()
+
+    def _build_shortcuts(self) -> None:
+        """Ctrl+Z / Ctrl+Y（外加 Ctrl+Shift+Z），转发给主窗口。
+
+        搜索框有焦点时不拦：那里的 Ctrl+Z 是文本框自己的撤销，玩家在改
+        搜索词时不该把文件里的改动退掉。判断放在主窗口的 ``_step_history``
+        里（它已经按「文本框非空才让」处理），这里只管把按键送过去。
+        """
+        for seq, sig in ((QKeySequence(QKeySequence.Undo), self.undoRequested),
+                         (QKeySequence(QKeySequence.Redo), self.redoRequested),
+                         (QKeySequence("Ctrl+Shift+Z"), self.redoRequested)):
+            sc = QShortcut(seq, self)
+            sc.setContext(Qt.WindowShortcut)
+            sc.activated.connect(sig.emit)
+
+    def _update_undo_buttons(self) -> None:
+        """按钮状态取自文档自己的历史——换文件后它也跟着变。"""
+        h = getattr(self.nd, "history", None)
+        can_undo = bool(h is not None and h.can_undo)
+        can_redo = bool(h is not None and h.can_redo)
+        self.btn_undo.setEnabled(can_undo)
+        self.btn_redo.setEnabled(can_redo)
+        self.btn_undo.setToolTip(
+            f"撤销：{h.undo_label()}" if can_undo else "没有可撤销的改动")
+        self.btn_redo.setToolTip(
+            f"重做：{h.redo_label()}" if can_redo else "没有可重做的改动")
 
     # ---- 数据 ----
+
+    def refresh(self) -> None:
+        """数据在别处被改了（撤销 / 重做）之后重画。
+
+        **名字必须是 ``refresh``。** 主窗口的 ``_refresh_after_history``
+        按这个名字找各专用页，找不到就跳过——而跳过意味着格子里的数字
+        停在撤销前那一刻，玩家会以为撤销没生效，然后再改一次。
+
+        重建 ``pawns`` 而不是只改格子：PawnView 里的值是投影出来的快照，
+        撤销之后它们已经是旧的了（克隆体的模块可能整个没了）。
+        """
+        keep = self._selected_identifiers()
+        self.reload()
+        self._restore_selection(keep)
+        # 「命中 N 个、克隆 M 个」记的是**上一次点应用**的账，撤销之后它
+        # 已经不对应当前文件状态了。留着会让人以为改动还没退掉。
+        # 撤销/重做实际做了什么，主窗口的状态栏会说（「已撤销：<步骤>」）。
+        self.apply_note.clear()
+
+    def _selected_identifiers(self) -> set[str]:
+        """当前选中的营。撤销前后要保住选中，否则人得重新找一遍。"""
+        rows = self.table.selectionModel()
+        if rows is None:
+            return set()
+        got = set()
+        for index in rows.selectedRows():
+            r = index.row()
+            if 0 <= r < len(self._rows):
+                got.add(self._rows[r].identifier)
+        return got
+
+    def _restore_selection(self, idents: set[str]) -> None:
+        if not idents:
+            return
+        for r, p in enumerate(self._rows):
+            if p.identifier in idents:
+                self.table.selectRow(r)
+                return
 
     def reload(self) -> None:
         if ag_view.PAWN_CLASS not in self.nd.class_names:
             self.pawns = []
             self._shown = []
+            self._rows = []
             self.table.setRowCount(0)
             self.note.setText(
                 f"{self.nd.path.name} 里没有 {ag_view.PAWN_CLASS} —— "
                 "将军模式的战略属性在 Pawn.ndfbin 里，换那个文件再打开。")
+            self._update_undo_buttons()
             return
         self.pawns = ag_view.build_pawns(self.nd)
         self._fill_filters()
         self._apply_filter()
+        self._update_undo_buttons()
 
     def _fill_filters(self) -> None:
         for box, key, label in (
@@ -422,6 +514,7 @@ class AgPage(QDialog):
 
     def _fill(self, rows: list[PawnView]) -> None:
         rows = self._sorted(rows)
+        self._rows = rows
         self.table.setUpdatesEnabled(False)
         self.table.setRowCount(len(rows))
         for r, p in enumerate(rows):
