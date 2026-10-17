@@ -148,6 +148,73 @@ def main() -> int:
     check("清空搜索后恢复部队全量", page.table.rowCount() == units,
           str(page.table.rowCount()))
 
+    # ---- 3b. 师 / 团两级筛选 ----
+    # 早先「上级编制」是一个下拉，按「最靠近营的那一级」取值，等于把师、团、
+    # 军混在一起 —— 实测 514 项，长到没法用。现在拆成上级链的第 0 段（师）
+    # 与第 1 段（团），并按「国家 → 师 → 团」逐级收窄。
+    print()
+    print("=== 3b. 上级编制拆成师、团两级 ===")
+    check("师下拉第一项是「全部师」，data 为 None",
+          page.f_div.itemData(0) is None)
+    check("第二项是「国家直属」，data 为空串",
+          page.f_div.itemData(1) == "", str(page.f_div.itemData(1)))
+    n_div_all = page.f_div.count()
+    check("师下拉比原来的一锅端（514 项）短得多", n_div_all < 514,
+          f"{n_div_all} 项")
+
+    # 国家 → 师：师下拉的选项只从当前国家池里算
+    page.f_country.setCurrentIndex(page.f_country.findData("SOV"))
+    check("选国家后师下拉变短", page.f_div.count() < n_div_all,
+          f"{n_div_all} → {page.f_div.count()}")
+    check("师下拉里的师都属于这个国家",
+          all(any(p.division == page.f_div.itemData(i)
+                  and p.name_country == "SOV" for p in pawns)
+              for i in range(2, page.f_div.count())),
+          f"{page.f_div.count()} 项")
+
+    # 师 → 团：团下拉收窄到这个师
+    page.f_div.setCurrentIndex(page.f_div.findData("8GA"))
+    check("8GA 命中 32 个营", page.table.rowCount() == 32,
+          str(page.table.rowCount()))
+    check("8GA 的团下拉只有几项（不是全局 377 项）",
+          page.f_reg.count() <= 10, f"{page.f_reg.count()} 项")
+    check("团下拉里的团都属于 8GA",
+          all(any(p.division == "8GA"
+                  and p.regiment == page.f_reg.itemData(i) for p in pawns)
+              for i in range(1, page.f_reg.count())
+              if page.f_reg.itemData(i) != ""),
+          f"{page.f_reg.count()} 项")
+
+    page.f_reg.setCurrentIndex(page.f_reg.findData("34ArtDiv"))
+    check("8GA / 34ArtDiv 命中 8 行", page.table.rowCount() == 8,
+          str(page.table.rowCount()))
+    check("命中的行上级列确实以 8GA / 34ArtDiv 开头",
+          page.table.rowCount() > 0
+          and all(page.table.item(r, 1).text().startswith("8GA / 34ArtDiv")
+                  for r in range(page.table.rowCount())),
+          page.table.item(0, 1).text() if page.table.rowCount() else "—")
+
+    # 国家直属：连师都没有。与「师直属营」（有师、没团）必须分开。
+    page._reset_filter()
+    page.f_div.setCurrentIndex(page.f_div.findData(""))
+    n_free = page.table.rowCount()
+    check("国家直属 = 244 个营", n_free == 244, str(n_free))
+    check("它们的上级列全是「—」",
+          n_free > 0 and all(page.table.item(r, 1).text() == "—"
+                             for r in range(n_free)))
+
+    page._reset_filter()
+    page.f_reg.setCurrentIndex(page.f_reg.findData(""))
+    n_org = page.table.rowCount()
+    check("师直属营 = 811（有师无团，且不含国家直属）", n_org == 811,
+          str(n_org))
+    check("师直属营的上级列都不为空",
+          n_org > 0 and all(page.table.item(r, 1).text() != "—"
+                            for r in range(n_org)))
+    page._reset_filter()
+    check("清空筛选后回到部队全量", page.table.rowCount() == units,
+          str(page.table.rowCount()))
+
     # 排序：行动点列必须是数值序，不是字符串序。
     # 用真实的表头点击信号，而不是直接调私有方法 —— 走的是玩家会走的那条路。
     ap_col = 4 + [a.key for a in ag_view.ATTRS].index("action_points")

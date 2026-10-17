@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """将军模式牌组属性 —— 第二个专用编辑页。
 
-**名称维度定候选池，属性条件定这一批。** 上面按国家前缀 / 上级编制 / 营名筛，
+**名称维度定候选池，属性条件定这一批。** 上面按国家 / 师 / 团 / 营名四级筛，
 下面可以叠任意多条属性条件（AND）；「应用到当前这批」把某个属性一次改成
 同一个值。两者最后合并成一个筛选结果，所以「筛」和「改」永远指的是同一批营 ——
 这也是批量改最容易出错的地方（筛的是 A、改的是 B）。
+
+**「师 / 团」是筛选维度，不是真实层级。** 名称里的段数只表示往上写了几级
+（``pion_BEL_11Sq`` 一级都没有，``pion_SOV_8GA_34ArtDiv_4_1`` 写了三级），
+同一个段位在不同国家可能是军也可能是师。这里把第 0 段叫「师」、第 1 段叫
+「团」，取的是**上下级关系里那两级的位置**，为的是让下拉框从 514 项降到
+几十项；要看真实层级，看结果表里那列「上级编制」。
 
 **改的是投影，落盘的是模块。** 战略属性挂在 pawn 引用的模块对象上
 （``ModulesDescriptors``），pawn 自己几乎是空的。所以这一页的值全部来自
@@ -214,7 +220,7 @@ class AgPage(QDialog):
         head = QLabel(
             "将军模式营的战略属性：部队类型、移动方式、行动点、炮兵支援范围。"
             "<br><span style='color:#8ab4d8;'>"
-            "上面按「国家前缀 / 上级编制 / 营名」筛，下面按属性排序看；"
+            "上面按「国家 / 师 / 团 / 营名」逐级筛，下面按属性排序看；"
             "底部的「应用到当前这批」会改掉筛选出的所有营。"
             "</span>")
         head.setWordWrap(True)
@@ -230,13 +236,27 @@ class AgPage(QDialog):
         self.f_kind.addItem("设施（机场/补给站）", ag_view.KIND_FACILITY)
         self.f_kind.addItem("全部类型", None)
         self.f_kind.setMinimumWidth(160)
-        self.f_kind.currentIndexChanged.connect(self._apply_filter)
+        self.f_kind.currentIndexChanged.connect(self._on_pool_changed)
         self.f_country = QComboBox()
         self.f_country.setMinimumWidth(130)
-        self.f_country.currentIndexChanged.connect(self._apply_filter)
-        self.f_parent = QComboBox()
-        self.f_parent.setMinimumWidth(150)
-        self.f_parent.currentIndexChanged.connect(self._apply_filter)
+        self.f_country.currentIndexChanged.connect(self._on_pool_changed)
+        # 上级编制分两级：师（上级链第一段）与团（第二段）。
+        # 合在一起的那个下拉实测 514 项，长到没法用。
+        self.f_div = QComboBox()
+        self.f_div.setMinimumWidth(150)
+        self.f_div.setToolTip(
+            "上级编制的第一段 —— 筛选意义上的「师」。\n"
+            "这是筛选维度，不等于部队真实层级：名称里的段数只表示往上\n"
+            "写了几级，同一个段位在不同国家可能是军，也可能是师。\n"
+            "要看真实层级，看结果表里那列「上级」。")
+        self.f_div.currentIndexChanged.connect(self._on_div_changed)
+        self.f_reg = QComboBox()
+        self.f_reg.setMinimumWidth(130)
+        self.f_reg.setToolTip(
+            "上级编制的第二段 —— 筛选意义上的「团」。\n"
+            "选了师之后只列该师下辖的团（平均 5 个）。\n"
+            "「师直属营」= 有师但没有团这一级。")
+        self.f_reg.currentIndexChanged.connect(self._apply_filter)
         self.f_search = QLineEdit()
         self.f_search.setPlaceholderText("搜营名或完整标识（如 595Reco）")
         self.f_search.setClearButtonEnabled(True)
@@ -248,8 +268,10 @@ class AgPage(QDialog):
         flt.addWidget(self.f_kind)
         flt.addWidget(QLabel("国家"))
         flt.addWidget(self.f_country)
-        flt.addWidget(QLabel("上级编制"))
-        flt.addWidget(self.f_parent)
+        flt.addWidget(QLabel("师"))
+        flt.addWidget(self.f_div)
+        flt.addWidget(QLabel("团"))
+        flt.addWidget(self.f_reg)
         flt.addWidget(QLabel("搜索"))
         flt.addWidget(self.f_search, 1)
         flt.addWidget(btn_reset)
@@ -459,36 +481,123 @@ class AgPage(QDialog):
         self._apply_filter()
         self._update_undo_buttons()
 
+    def _name_pool(self) -> list[PawnView]:
+        """名称维度的候选池：只应用「类型」与「国家」。
+
+        师、团两个下拉的选项都从**这个池**里算，于是三级是逐级收窄的：
+        选了中国就只列该国的师，选了师就只列该师下辖的团。
+
+        搜索框与属性条件**不参与**：否则每敲一个字就要重建两个下拉，
+        而且「按名字找团」时越搜选项越少，反而找不到。
+        """
+        kind = self.f_kind.currentData()
+        country = self.f_country.currentData()
+        return [p for p in self.pawns
+                if (not kind or p.kind == kind)
+                and (not country or p.name_country == country)]
+
     def _fill_filters(self) -> None:
-        for box, key, label in (
-            (self.f_country, "country", "全部国家"),
-            (self.f_parent, "parent", "全部上级"),
-        ):
-            was = box.currentData()
-            box.blockSignals(True)
-            box.clear()
-            box.addItem(label, None)
-            for value, n in ag_view.choices(self.pawns, key):
-                box.addItem(f"{value}（{n}）", value)
-            if was is not None:
-                i = box.findData(was)
-                if i >= 0:
-                    box.setCurrentIndex(i)
-            box.blockSignals(False)
+        """重建三个下拉。全程 blockSignals —— 重建不该顺手触发一次筛选。"""
+        self._fill_country()
+        self._fill_div()
+        self._fill_reg()
+
+    def _fill_country(self) -> None:
+        was = self.f_country.currentData()
+        self.f_country.blockSignals(True)
+        self.f_country.clear()
+        self.f_country.addItem("全部国家", None)
+        for value, n in ag_view.choices(self.pawns, "country"):
+            self.f_country.addItem(f"{value}（{n}）", value)
+        self._restore(self.f_country, was)
+        self.f_country.blockSignals(False)
+
+    def _fill_div(self) -> None:
+        """师下拉：全部 / 国家直属 / 当前国家池里的各个师。
+
+        「国家直属」的 data 是**空字符串**，与「全部」（``None``）区分开 ——
+        前者要筛出「一个上级都没有」的营，后者是不过滤。
+        """
+        was = self.f_div.currentData()
+        pool = self._name_pool()
+        free = sum(1 for p in pool if not p.parents)
+        self.f_div.blockSignals(True)
+        self.f_div.clear()
+        self.f_div.addItem("全部师", None)
+        self.f_div.addItem(f"国家直属（{free}）", "")
+        for value, n in ag_view.choices(pool, "division"):
+            self.f_div.addItem(f"{value}（{n}）", value)
+        self._restore(self.f_div, was)
+        self.f_div.blockSignals(False)
+
+    def _fill_reg(self) -> None:
+        """团下拉：跟着当前选中的师收窄。
+
+        未选师时列出全部（377 项，仍然长，但那是「我还没想好哪个师」的
+        正常代价）；选了师之后平均 5 项、最多 13 项。
+        """
+        was = self.f_reg.currentData()
+        pool = self._name_pool()
+        div = self.f_div.currentData()
+        if div is not None:
+            pool = [p for p in pool if p.division == div]
+        no_reg = sum(1 for p in pool if p.parents and not p.regiment)
+        self.f_reg.blockSignals(True)
+        self.f_reg.clear()
+        self.f_reg.addItem("全部团" if div is None else "该师全部营", None)
+        if no_reg:
+            # 有师没团 —— 与「国家直属」不是一回事，所以标签单列。
+            self.f_reg.addItem(f"师直属营（{no_reg}）", "")
+        for value, n in ag_view.choices(pool, "regiment"):
+            self.f_reg.addItem(f"{value}（{n}）", value)
+        self._restore(self.f_reg, was)
+        self.f_reg.blockSignals(False)
+
+    @staticmethod
+    def _restore(box: QComboBox, was) -> None:
+        """把重建前的选择尽量还原。找不到就停在「全部」。"""
+        if was is None:
+            return
+        i = box.findData(was)
+        if i >= 0:
+            box.setCurrentIndex(i)
+
+    def _on_pool_changed(self) -> None:
+        """类型或国家变了：师、团两级的选项都从「类型 + 国家」的池里算，
+        所以两级都得重建，不能只重画表格。"""
+        self._fill_div()
+        self._fill_reg()
+        self._apply_filter()
+
+    def _on_div_changed(self) -> None:
+        """师变了：团下拉收窄到这个师。"""
+        self._fill_reg()
+        self._apply_filter()
 
     def _reset_filter(self) -> None:
         self.f_kind.setCurrentIndex(0)
         self.f_country.setCurrentIndex(0)
-        self.f_parent.setCurrentIndex(0)
+        self.f_div.setCurrentIndex(0)
+        self.f_reg.setCurrentIndex(0)
         self.f_search.clear()
 
-    def _matches(self, p: PawnView, kind, country, parent, text) -> bool:
+    def _matches(self, p: PawnView, kind, country, div, reg, text) -> bool:
         if kind and p.kind != kind:
             return False
         if country and p.name_country != country:
             return False
-        if parent and p.best_parent() != parent:
+        # 空字符串 = 明确要「没有这一级」，所以判 None 而不是判真假。
+        if div is not None and p.division != div:
             return False
+        if reg is not None:
+            if reg == "":
+                # 「师直属营」：有师、但没有团这一级。**国家直属不算在内**
+                # —— 它连师都没有，在师那一栏有自己的一项。两者混在一起
+                # 会得到一个「1055 行、上级列全是 —」的怪结果。
+                if not (p.division and not p.regiment):
+                    return False
+            elif p.regiment != reg:
+                return False
         if text:
             hay = f"{p.identifier} {p.export_name} {p.unit}".lower()
             if text not in hay:
@@ -498,12 +607,13 @@ class AgPage(QDialog):
     def _apply_filter(self) -> None:
         kind = self.f_kind.currentData()
         country = self.f_country.currentData()
-        parent = self.f_parent.currentData()
+        div = self.f_div.currentData()
+        reg = self.f_reg.currentData()
         text = self.f_search.text().strip().lower()
         conds = [c for c in (r.condition() for r in self._conds) if c]
         self._shown = [
             p for p in self.pawns
-            if self._matches(p, kind, country, parent, text)
+            if self._matches(p, kind, country, div, reg, text)
             and all(c.match(p.values.get(c.field)) for c in conds)]
         if conds:
             # Condition.describe 不知道我们的内部键，要把 air_deny 这类

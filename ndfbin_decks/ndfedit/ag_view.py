@@ -286,8 +286,47 @@ class PawnView:
         层级深度不固定（3~6 段），这里取**最靠近营的那一层**
         （``parents[-1]``）—— 它是最细的一级编制，与「我想改某个团下的营」
         这个真实意图最接近。
+
+        .. deprecated::
+           界面已经不再用它了：它把师、团、军混在同一个下拉里，实测柏林的
+           柏林 mod 因此有 **514 项**。界面改用 :attr:`division` /
+            :attr:`regiment` 两级。留着是因为测试和 ``tools/`` 里还在用。
         """
         return self.parents[-1] if self.parents else ""
+
+    @property
+    def division(self) -> str:
+        """筛选意义上的「师」—— 上级链的**第一段**。
+
+        实测依据（柏林 mod，2265 个有标识的营）：
+
+        ======  ======  ========================================
+        上级层数 营数    形态
+        ======  ======  ========================================
+        0       305     ``pion_BEL_11Sq`` —— 国家直属
+        1       811     ``pion_BEL_1DI_12Linie``
+        2       1141    ``pion_CAN_1DIV_R22R_1``
+        3       11      ``pion_SOV_8GA_34ArtDiv_4_1``
+        ======  ======  ========================================
+
+        「第一段是不是师」这件事是**验证过的**，不是猜的：1 层上级的 147 种
+        取值里有 **79 种与 2 层上级的第 0 段重合**，而那一层装的就是
+        ``7PzD`` / ``1DI`` / ``TKSud`` 这类师、军级单位。
+
+        **这是筛选维度，不是真实的部队层级。** 名称里的段数只表示「往上写了几
+        级」，同一个段位在不同国家可能是军也可能是师（``8GA`` 是集团军）。
+        要按真实层级看，得用结果表里那列「上级编制」。
+        """
+        return self.parents[0] if self.parents else ""
+
+    @property
+    def regiment(self) -> str:
+        """筛选意义上的「团」—— 上级链的**第二段**；只有一级时为空。
+
+        空有两种含义，界面上分开表达：**师都没有**的是「国家直属」，
+        **有师没团**的是「师直属营」。
+        """
+        return self.parents[1] if len(self.parents) >= 2 else ""
 
 
 def parse_identifier(ident: str) -> tuple[str, str, str, tuple[str, ...]]:
@@ -445,8 +484,19 @@ def build_pawns(nd: NdfDocument) -> list[PawnView]:
     return out
 
 
-def choices(pawns: list[PawnView], key: str) -> list[tuple[str, int]]:
+def choices(pawns: list[PawnView], key: str,
+            within: str | None = None) -> list[tuple[str, int]]:
     """某个维度的取值分布，按条数降序。
+
+    **「上级编制」分成两级，不再一锅端。** 早先只有一个下拉，按
+    ``best_parent()``（最靠近营的那一级）取值，等于把师、团、军混在一起 ——
+    柏林 mod 实测 **514 项**，长到没法用。现在拆成：
+
+    ``division``    上级链第一段（筛选意义上的「师」），**156 项**
+    ``regiment``    上级链第二段（「团」），可按 ``within`` 限定在某个师之下 ——
+                    联动后每师平均 5 项、最多 13 项
+
+    ``within`` 表示「只看这个师下面的营」。传 ``None`` 表示不限。
 
     **「国家」有两个来源，不能混。** 实测柏林 mod 里
     ``MotherCountry`` 与名字段 1 有 **139 / 2268** 处不一致，而且成片出现：
@@ -464,6 +514,12 @@ def choices(pawns: list[PawnView], key: str) -> list[tuple[str, int]]:
         got = Counter(p.name_country for p in pawns if p.name_country)
     elif key == "faction":
         got = Counter(p.country for p in pawns if p.country)
+    elif key == "division":
+        got = Counter(p.division for p in pawns if p.division)
+    elif key == "regiment":
+        pool = (pawns if within is None
+                else [p for p in pawns if p.division == within])
+        got = Counter(p.regiment for p in pool if p.regiment)
     elif key == "parent":
         got = Counter(p.best_parent() for p in pawns if p.best_parent())
     elif key == "kind":
