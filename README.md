@@ -11,11 +11,11 @@
 
 ## 下载即用
 
-到 [Releases](../../releases) 下载 `Warno Ndfbin Editor v0.1.exe`
-（MD5 `2e80771b9fea975d4317f6be0b71d467`），双击。
+到 [Releases](../../releases) 下载 `Warno Ndfbin Editor v0.2.exe`
+（MD5 `b668e3e655b16762924a79f465f9238e`），双击。
 
 **不需要 Python，不需要装任何库** —— 运行时依赖、图标、界面文字表都在那一个
-文件里（约 43 MB）。首次启动约 2 秒，单文件包要先把自己解压到临时目录。
+文件里（约 43 MB）。首次启动约 1.5 秒，单文件包要先把自己解压到临时目录。
 
 > **首次运行可能弹 Windows SmartScreen 的蓝色警告。** 这个 EXE 没有代码签名
 > 证书，未签名程序都会触发它，不代表文件有问题 —— 点「更多信息」→「仍要运行」
@@ -24,7 +24,7 @@
 也可以把文件路径直接带在参数上打开：
 
 ```bat
-"Warno Ndfbin Editor v0.1.exe" "D:\...\Gen\NDF\GFX\Weapon.ndfbin"
+"Warno Ndfbin Editor v0.2.exe" "D:\...\Gen\NDF\GFX\Weapon.ndfbin"
 ```
 
 ## 能改什么
@@ -47,11 +47,29 @@
 
 **不会显示的**：数组整体、`loc_hash`、`guid`。改了只会弄坏 mod。
 
+类多的文件（`Depiction.ndfbin` 145 个类、`Unit.ndfbin` 102 个）左栏顶部有
+**类名搜索框** —— 输入任意片段即可过滤，不区分大小写。
+
 还有几件为「改错要能退」准备的东西：
 
 - **撤销 / 重做**（`Ctrl+Z` / `Ctrl+Y`）—— 批量改 150 条是**一步**，一次全退
 - **保存前逐字段对照** —— 列出对象、字段、改前、改后
 - 原子写入 + 自动 `.bak` 备份
+
+### 专用页：不用先认识类名
+
+工具栏的下拉框里有第二个入口，面向「我知道要改什么，但不知道它在哪个类里」：
+
+| 页面 | 打开的文件 | 做什么 |
+|---|---|---|
+| **编辑弹药** | `Weapon.ndfbin` | 按字段值筛弹药（如「对地射程 = 1925」），批量改 |
+| **编辑牌组属性** | `Pawn.ndfbin` | 将军模式营的战略属性：按国家/师/团筛，改行动点、移动方式、部队类型、支援半径与防空半径 |
+
+牌组属性页的批量改带 **clone-on-write**：改动落在共享描述器上时，只命中一部分
+就自动克隆，没命中的营一个字节不动。它还能给本来没有某个属性的营**补上**那个
+属性（例如给步兵营加炮兵支援半径）。
+
+> 牌组属性页的实际改动已在游戏内验证通过。
 
 ## 从源码运行
 
@@ -119,13 +137,13 @@ assets/          图标与其生成脚本
 python -m venv .venv-build
 .venv-build\Scripts\pip install -r requirements.txt -r requirements-build.txt
 .venv-build\Scripts\python.exe build_exe.py
-.venv-build\Scripts\python.exe verify_exe.py 0.1
+.venv-build\Scripts\python.exe verify_exe.py 0.2
 ```
 
-构建写 `dist_0.1/`（候选），**不碰 `dist/`**（已发布的那一份）。验证通过后手工提升：
+构建写 `dist_0.2/`（候选），**不碰 `dist/`**（已发布的那一份）。验证通过后手工提升：
 
 ```bat
-copy "dist_0.1\Warno Ndfbin Editor v0.1.exe" "dist\"
+copy "dist_0.2\Warno Ndfbin Editor v0.2.exe" "dist\"
 ```
 
 `verify_exe.py` 会真的启动那个 EXE、读它写出的日志、**把一个真实 `.ndfbin`
@@ -138,6 +156,7 @@ codec 的包照样能启动，它会在用户双击第一个文件时才失败�
 |---|---|
 | [使用说明](doc/NDFBIN编辑器使用说明.md) | 面向玩家，含 17 张界面截图 |
 | [CNDF 格式规格](doc/CNDF格式规格.md) | 二进制容器的结构 |
+| [牌组属性页设计与实测](doc/AG牌组属性编辑-实现计划.md) | 第二个专用页的数据依据、坑与验收 |
 | [立刻可推进的工作](doc/立刻可推进的工作.md) | 当前待办与实测数据 |
 | [ToDoList](doc/ToDoList-Ndfbin编辑器.md) | 阶段划分与风险登记 |
 

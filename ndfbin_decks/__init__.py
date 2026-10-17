@@ -13,7 +13,11 @@ what :file:`build_exe.py` packages.
 #: numbering restarts here on purpose: the 0.4 that preceded it belonged to the
 #: deck-only editor, and carrying it over would imply a history this build does
 #: not have.
-__version__ = "0.1"
+#:
+#: 0.2 adds the second dedicated page (Army General 牌组属性) and the class-name
+#: filter.  The AG page was validated in game between the two releases, which is
+#: why it lands as a version rather than an increment on 0.1's notes.
+__version__ = "0.2"
 
 #: The product, as it appears on the EXE, in its Properties dialog and in the
 #: log header.  Deliberately ASCII: this string becomes a file name that users

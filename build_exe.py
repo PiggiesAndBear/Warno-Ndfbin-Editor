@@ -285,6 +285,14 @@ def main() -> int:
         ("ndfbin_decks/ndfedit/strfields", "text, tag and hash fields"),
         ("ndfbin_decks/ndfedit/history", "the undo stack"),
         ("ndfbin_decks/ndfedit/ammo_page", "the ammo editor page"),
+        # The AG page is only reached through a combo box in the toolbar, and
+        # it is what 0.2 is *about* — so it gets named here rather than being
+        # left to "gui imports it, PyInstaller must have followed".  A build
+        # that silently dropped it would still start, still show the ammo page,
+        # and only fail when somebody picked 「编辑牌组属性」.
+        ("ndfbin_decks/ndfedit/ag_page", "the AG deck-attribute page"),
+        ("ndfbin_decks/ndfedit/ag_view", "the AG module→field projection"),
+        ("ndfbin_decks/ndfedit/ag_edit", "the AG writer (clone-on-write)"),
         ("ndfbin_decks/ndfedit/modpicker", "the mod / file browser"),
         # Reached only through modpicker, so naming it keeps a refactor from
         # dropping it quietly.
