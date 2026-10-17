@@ -46,7 +46,7 @@ def main() -> int:
     _env.deck(_env.TEST)
     from ndfbin_decks.app.gui import MainWindow
 
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
 
     # stub the modal dialogs so the test never blocks
     shown: list[tuple[str, str]] = []

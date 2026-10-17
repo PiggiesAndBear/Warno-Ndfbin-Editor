@@ -47,7 +47,7 @@ def objgraph(nd) -> bytes:
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     for name in ("critical", "information", "warning", "question"):
         setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.Yes))
     ChangePreviewDialog.exec = lambda self: QDialog.Accepted

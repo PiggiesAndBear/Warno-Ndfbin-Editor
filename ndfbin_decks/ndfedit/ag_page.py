@@ -193,6 +193,9 @@ class AgPage(QDialog):
         #: 表格里**实际显示的顺序**（已排序）。撤销后要按 identifier 找回
         #: 选中行，而那需要一份「行号 → 营」的映射，``_shown`` 是未排序的。
         self._rows: list[PawnView] = []
+        #: 枚举属性的可选值缓存（``attr.key -> [值]``）。换文件要清空 ——
+        #: 不同文件的 STRG 表不同，复用会写出根本不存在于那个文件里的名字。
+        self._choice_cache: dict[str, list[str]] = {}
         #: 属性条件行（AND）。名称维度定「候选池」，它们定「这一批」。
         self._conds: list[_CondRow] = []
         #: 当前排序列与方向（None = 保持文件里的原顺序）。
@@ -295,11 +298,14 @@ class AgPage(QDialog):
         self.bulk_attr = QComboBox()
         self.bulk_attr.setMinimumWidth(170)
         for a in ATTRS:
-            if a.kind in ("float", "int", "bool"):
-                self.bulk_attr.addItem(a.label, a.key)
+            if a.key == "country":
+                # 国家留给筛选，不进批量改：它与编制、名字强耦合，
+                # 改了只会制造更多「名字说一件事、字段说另一件事」。
+                continue
+            self.bulk_attr.addItem(a.label, a.key)
         self.bulk_attr.setToolTip(
-            "只列数值属性。「移动方式」「部队类型」是换引用，"
-            "走的是另一条路（下一阶段）。")
+            "数值属性直接填新值；「移动方式」「部队类型」是换引用，\n"
+            "只能换成文件里**已经有**的取值（下拉选）。")
         self.bulk_value = QDoubleSpinBox()
         self.bulk_value.setDecimals(4)
         self.bulk_value.setRange(SENTINEL, 1e9)
@@ -308,6 +314,11 @@ class AgPage(QDialog):
         self.bulk_value.setMinimumWidth(130)
         self.bulk_value.setKeyboardTracking(False)
         self.bulk_value.valueChanged.connect(self._on_bulk_value)
+        self.bulk_choice = QComboBox()
+        self.bulk_choice.setMinimumWidth(200)
+        self.bulk_choice.setVisible(False)
+        self.bulk_choice.currentIndexChanged.connect(
+            lambda _i: self._update_apply_buttons())
         self.btn_apply = QPushButton("应用到当前这批")
         self.btn_apply.setEnabled(False)
         self.btn_apply.setToolTip(
@@ -315,13 +326,27 @@ class AgPage(QDialog):
             "共用同一模块的营会一起变；只命中一部分时自动克隆模块，"
             "没命中的营不受影响。")
         self.btn_apply.clicked.connect(self.on_apply)
+        # 「补属性」：给本来没有这个字段的营加上它。只在支持补加的属性
+        # 上出现（实测只有支援半径与防空半径）。
+        self.btn_grant = QPushButton("给缺这个属性的营补上")
+        self.btn_grant.setVisible(False)
+        self.btn_grant.setToolTip(
+            "这些营的战术描述器上根本没有这个字段。\n"
+            "补加时会先克隆它自己的描述器、再追加字段 ——\n"
+            "共用同一个描述器的其它营不受影响。")
+        self.btn_grant.clicked.connect(self.on_grant)
+        self.bulk_attr.currentIndexChanged.connect(
+            self._on_bulk_attr_changed)
         brow.addWidget(QLabel("把这批营的"))
         brow.addWidget(self.bulk_attr)
         brow.addWidget(QLabel("改成"))
         brow.addWidget(self.bulk_value)
+        brow.addWidget(self.bulk_choice)
         brow.addWidget(self.btn_apply)
+        brow.addWidget(self.btn_grant)
         brow.addStretch(1)
         root.addLayout(brow)
+        self._on_bulk_attr_changed()
 
         self.apply_note = QLabel("")
         self.apply_note.setStyleSheet("color:#8ab4d8;")
@@ -489,6 +514,9 @@ class AgPage(QDialog):
         else:
             self.cond_hint.setText("")
         self._fill(self._shown)
+        # 「应用」「补上」都只作用于当前这批 —— 筛完之后按钮状态要跟着变，
+        # 否则筛到 0 个营时按钮还亮着，点下去只是一句「没有营可改」。
+        self._update_apply_buttons()
 
     # ---- 属性条件 ----
 
@@ -595,19 +623,100 @@ class AgPage(QDialog):
 
     def _on_bulk_value(self, value: float) -> None:
         """没填值时不让点「应用」——那一下会把整批改成 0。"""
-        self.btn_apply.setEnabled(value > SENTINEL)
+        self._update_apply_buttons()
+
+    # ---- 批量改：控件切换 ----
+
+    def _bulk_attr(self):
+        key = self.bulk_attr.currentData()
+        return next((a for a in ATTRS if a.key == key), None)
+
+    def _on_bulk_attr_changed(self) -> None:
+        """数值属性给数字框，换引用属性给下拉框。
+
+        这两类不能共用同一个控件：换引用只能选文件里已有的取值，
+        填一个自由的数字毫无意义。
+        """
+        attr = self._bulk_attr()
+        choice = bool(attr is not None and attr.is_choice)
+        self.bulk_value.setVisible(not choice)
+        self.bulk_choice.setVisible(choice)
+        if choice:
+            self._fill_choices(attr)
+        self.btn_grant.setVisible(bool(attr is not None and attr.grantable))
+        self._update_apply_buttons()
+
+    def _fill_choices(self, attr) -> None:
+        """枚举属性的可选值 —— 全部来自文件里**已经存在**的取值。
+
+        移动方式 6 种、部队类型 17 种。这些字符串必须已经在 STRG 表里，
+        否则写不进去（``strg_ref`` 只编码下标，不能凭空造名字）。
+        """
+        got = self._choice_cache.get(attr.key)
+        if got is None:
+            try:
+                got = ag_view.choice_values(self.nd, attr)
+            except Exception:                            # noqa: BLE001
+                got = []
+            self._choice_cache[attr.key] = got
+        self.bulk_choice.blockSignals(True)
+        self.bulk_choice.clear()
+        # 首项是「未选」，data 为 None。不给它的话下拉会默认选中第一项
+        # （比如「空中」），切过来按钮立刻可点 —— 手一滑整批就全变空中。
+        # 与数值框的「（未填）」哨兵是同一件事。
+        self.bulk_choice.addItem("（未选）", None)
+        for value in got:
+            label = (movement_label(value) if attr.key == "movement"
+                     else value)
+            self.bulk_choice.addItem(label, value)
+        self.bulk_choice.blockSignals(False)
+
+    def _update_apply_buttons(self) -> None:
+        """「应用」「补上」两个按钮的可用状态。
+
+        两个都要看「值填没填」——不填就点，等于把整批改成 0 或空字符串。
+        """
+        attr = self._bulk_attr()
+        if attr is None:
+            self.btn_apply.setEnabled(False)
+            self.btn_grant.setEnabled(False)
+            return
+        if attr.is_choice:
+            ready = self.bulk_choice.currentData() is not None
+        else:
+            ready = self.bulk_value.value() > SENTINEL
+        has_rows = bool(self._shown)
+        self.btn_apply.setEnabled(ready and has_rows)
+        self.btn_grant.setEnabled(attr.grantable and ready and has_rows)
 
     def on_apply(self) -> None:
-        """把当前筛选出的这批营的某个属性改成同一个值。"""
-        key = self.bulk_attr.currentData()
-        attr = next((a for a in ATTRS if a.key == key), None)
+        """把当前筛选出的这批营的某个属性改成同一个值。
+
+        数值属性走 :func:`ag_edit.apply_attr`，枚举属性（移动方式 / 部队
+        类型）走 :func:`ag_edit.apply_choice` —— 后者是「换引用」，
+        只能换成文件里已有的取值。
+        """
+        attr = self._bulk_attr()
         if attr is None or not self._shown:
             self.apply_note.setText("当前没有营可改 —— 先放宽筛选。")
             return
-        value = self.bulk_value.value()
-        if value <= SENTINEL:
-            self.apply_note.setText("先在上面填一个值。")
-            return
+
+        if attr.is_choice:
+            text = self.bulk_choice.currentData()
+            if not text:
+                self.apply_note.setText("先在右边选一个目标值。")
+                return
+            shown_value = (movement_label(text) if attr.key == "movement"
+                           else text)
+            value = text
+            verb = "换成"
+        else:
+            value = self.bulk_value.value()
+            if value <= SENTINEL:
+                self.apply_note.setText("先在上面填一个值。")
+                return
+            shown_value = f"{value:g}"
+            verb = "改成"
 
         # 确认框里要说清「共用」这件事：这是唯一会误伤别人的地方。
         groups: dict[int, int] = {}
@@ -626,15 +735,69 @@ class AgPage(QDialog):
         ok = QMessageBox.question(
             self, "确认批量修改",
             f"把这 {len(self._shown)} 个营的「{attr.label}」"
-            f"改成 {value:g}？{extra}",
+            f"{verb} {shown_value}？{extra}",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if ok != QMessageBox.Yes:
             return
 
         try:
-            res = ag_edit.apply_attr(self.nd, self._shown, attr, value)
+            if attr.is_choice:
+                res = ag_edit.apply_choice(self.nd, self._shown, attr, value)
+            else:
+                res = ag_edit.apply_attr(self.nd, self._shown, attr, value)
         except ag_edit.AgEditError as exc:
             QMessageBox.warning(self, "改不了", str(exc))
+            return
+
+        self.apply_note.setText(res.summary())
+        if res.ok:
+            self.dirtyApplied.emit()
+            self.reload()
+
+    def on_grant(self) -> None:
+        """给本来**没有**这个属性的营加上它。
+
+        与 :meth:`on_apply` 是两条路：那个改已有的值，这个要克隆描述器
+        再追加字段。工兵营获得炮兵支援半径只能走这条 ——
+        它的战术描述器上压根没有那个字段。
+        """
+        attr = self._bulk_attr()
+        if attr is None or not self._shown or not attr.grantable:
+            return
+        value = self.bulk_value.value()
+        if value <= SENTINEL:
+            self.apply_note.setText("先在左边填一个值。")
+            return
+
+        missing = ag_edit.missing_field_pawns(self._shown, attr)
+        if not missing:
+            self.apply_note.setText(
+                f"这批营本来就有「{attr.label}」，没有需要补的。"
+                "要改值请用「应用到当前这批」。")
+            return
+
+        groups: dict[int, int] = {}
+        for p in missing:
+            mid = p.modules.get(attr.module)
+            if mid is not None:
+                groups[mid] = groups.get(mid, 0) + 1
+        most = max(groups.values()) if groups else 1
+        ok = QMessageBox.question(
+            self, "确认补加属性",
+            f"给 {len(missing)} 个营补上「{attr.label}」= {value:g}？\n\n"
+            f"这些营的战术描述器上本来没有这个字段。每个营会先克隆它自己"
+            f"一份描述器再追加字段 —— 最热的一个描述器被 {most} 个营共用，"
+            f"直接加会让它们全体多出这个属性。\n\n"
+            f"这批营里的另外 {len(self._shown) - len(missing)} 个已经有这个"
+            f"字段，这次不动它们。",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if ok != QMessageBox.Yes:
+            return
+
+        try:
+            res = ag_edit.grant_attr(self.nd, missing, attr, value)
+        except ag_edit.AgEditError as exc:
+            QMessageBox.warning(self, "补不上", str(exc))
             return
 
         self.apply_note.setText(res.summary())

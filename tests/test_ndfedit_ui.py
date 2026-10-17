@@ -36,7 +36,7 @@ def check(name, cond, detail=""):
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
 
     print("\n=== 1. Schema 对多个文件都能自动发现字段 ===")
     docs = {}

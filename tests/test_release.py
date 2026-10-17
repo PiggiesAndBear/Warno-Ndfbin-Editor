@@ -20,6 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import _env                                              # noqa: E402
 from _env import ROOT                                    # noqa: E402
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -134,7 +135,7 @@ def main() -> int:
     print("=== 3. the title is what the taskbar hint shows ===")
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     from ndfbin_decks.ndfedit.gui import MainWindow
     # gui.main() installs the icon at the application level and the window
     # inherits it; doing the same here keeps this the real behaviour rather

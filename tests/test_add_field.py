@@ -34,7 +34,7 @@ def check(name, cond, detail=""):
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
 
     print("\n=== 1. 找一个「部分覆盖」的字段作为样本 ===")
     nd = NdfDocument.load(SRC / "Weapon.ndfbin")

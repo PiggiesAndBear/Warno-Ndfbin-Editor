@@ -48,7 +48,7 @@ def fake_mod(root=None, **kw) -> "modlocator.ModPaths":
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     # 离屏环境下模态框会一直等一个永远不会来的点击，把测试挂死。
     # 坏文件那条用例就是靠弹框报错的，这里换成静默通过。
     QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.Ok)

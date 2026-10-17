@@ -82,7 +82,7 @@ def set_multi(row, wanted: set):
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     for name in ("critical", "information", "warning", "question"):
         setattr(QMessageBox, name, staticmethod(lambda *a, **k: QMessageBox.Yes))
     # 保存前会弹逐字段预览框；离屏下 exec() 会永久阻塞。

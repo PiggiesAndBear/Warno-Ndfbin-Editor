@@ -234,7 +234,7 @@ def _run(work: Path) -> None:
     # ==================================================================
     from PySide6.QtWidgets import QApplication, QPushButton
     from ndfbin_decks.ndfedit.gui import MainWindow
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     tmp2 = Path(tempfile.mkdtemp(prefix="test_rle_ui_"))
     work2 = tmp2 / "Weapon.ndfbin"
     shutil.copy2(work, work2)

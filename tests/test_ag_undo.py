@@ -246,7 +246,7 @@ def test_ui_routing() -> None:
     tmp = Path(tempfile.mkdtemp(prefix="agundo5_"))
     try:
         dst = fresh_copy(tmp)
-        app = QApplication.instance() or QApplication([])
+        app = _env.qt_app()
         win = MainWindow()
         check("主窗口能加载 Pawn.ndfbin", win.load_path(dst))
         dlg = win.open_ag_editor()
@@ -328,6 +328,8 @@ def test_ui_routing() -> None:
         check("撤销之后筛选条件还留着", row.condition() is not None,
               f"field={row.field.currentData()} op={row.op.currentData()}")
         dlg.close()
+        dlg.deleteLater()
+        app.processEvents()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

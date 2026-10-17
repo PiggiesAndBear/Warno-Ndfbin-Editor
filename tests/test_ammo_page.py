@@ -49,7 +49,7 @@ def set_multi(row, wanted: set):
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
     QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.Ok)

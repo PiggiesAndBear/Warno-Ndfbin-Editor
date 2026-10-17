@@ -42,7 +42,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
     if not PAWN.is_file():
         _env.skip(f"这个 mod 没有 Pawn.ndfbin（{PAWN}）")
 
@@ -195,6 +195,13 @@ def main() -> int:
           _fmt(None, "float"))
 
     print()
+    # 显式关掉页面再退出：窗口对象最后会被 Python 回收，而回收发生在
+    # 解释器退出阶段，那时 Qt 的静态数据可能已经拆了。先 close 掉能让
+    # 析构走在还有 QApplication 的时候（配合 _env.qt_app() 的模块级持有）。
+    page.close()
+    page.deleteLater()
+    app.processEvents()
+
     if FAIL:
         print(f"FAIL — {len(FAIL)} / {len(PASS) + len(FAIL)} 项未通过：")
         for f in FAIL:

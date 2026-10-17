@@ -258,3 +258,31 @@ def cndf_files(*, limit: int | None = None) -> list:
                     if limit is not None and len(found) >= limit:
                         return sorted(found)
     return sorted(found)
+
+
+# ---------------------------------------------------------------------------
+# Qt
+# ---------------------------------------------------------------------------
+
+_APP = None
+
+
+def qt_app():
+    """一个**活到进程结束**的 ``QApplication``。
+
+    Qt 只允许存在一个实例，所以重复调用返回同一个。
+
+    为什么不能像普通变量那样写在函数里：``app = QApplication([])`` 作为
+    局部变量，函数一返回就被回收；之后 Python 再清理窗口对象时，会碰到
+    一个已经销毁的 ``QApplication``，直接段错误。症状很难查 ——
+    **测试全部打印「通过」，退出码却是 139**（或者是 127 这种看起来像
+    「命令不存在」的码），而且偶发：释放顺序每次都可能不同。
+
+    也没有别的地方能持有它：测试函数之间不共享作用域，只有模块级变量
+    能活到最后。
+    """
+    global _APP
+    if _APP is None:
+        from PySide6.QtWidgets import QApplication
+        _APP = QApplication.instance() or QApplication([])
+    return _APP

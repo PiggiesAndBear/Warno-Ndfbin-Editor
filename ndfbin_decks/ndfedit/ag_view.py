@@ -57,6 +57,16 @@ ICON_HOST = "TStrategicLabelModuleDescriptor"
 #: 不是两种类型。去掉前缀就是类型名（``howitzer`` / ``apc`` / ``Armor_heavy`` …）。
 ICON_PREFIXES = ("Texture_STRATEGIC_RTS_H_", "Texture_STRATEGIC_")
 
+#: 图标的真正载体类。``TStrategicLabelModuleDescriptor.BackgroundTexture``
+#: 是个 obj_ref，指向这一类的对象；成对的纹理名存在它的 ``Values`` 列表里。
+#: 实测 2265 个载体各被 **1** 个营引用 —— 换图标不需要克隆。
+ICON_CARRIER = ("TBUCKToolAlternativeValues_TUIValueTextureNameFrom"
+                "TEugBMutableInteger")
+
+#: 图标类型的两个变体前缀（顺序固定：H 版在前）。
+_ICON_BASE = "Texture_STRATEGIC_"
+_ICON_H = "Texture_STRATEGIC_RTS_H_"
+
 
 def _prop(obj: dict, name: str) -> dict | None:
     """对象上的一个属性值字典，没有则 ``None``。"""
@@ -121,6 +131,14 @@ class Attr:
     kind: str = "float"
     #: 界面上的补充说明（为什么这个字段值得注意）
     note: str = ""
+    #: 这个字段能不能**赋予**给本来没有它的营（克隆模块 + 追加字段）。
+    #: 只有实测确认过模板存在、且语义独立的字段才打开 —— 见 :func:`grantable`。
+    grantable: bool = False
+
+    @property
+    def is_choice(self) -> bool:
+        """取值是一个**有限枚举**而不是数字（换引用型）。"""
+        return self.kind in ("str", "icon")
 
 
 #: 用户会来改/看的属性。顺序就是结果表的列顺序 ——
@@ -133,13 +151,18 @@ ATTRS: tuple[Attr, ...] = (
     Attr("icon", "部队类型", "TStrategicLabelModuleDescriptor",
          "BackgroundTexture", "icon", "战略地图图标"),
     Attr("support_radius", "支援半径", "TStrategicBattleModuleDescriptor",
-         "BattleSupportRadiusInAPCase", "float", "炮兵支援，单位 AP"),
+         "BattleSupportRadiusInAPCase", "float", "炮兵支援，单位 AP",
+         # 实测 11 个 battle 模块里 6 个带这个字段，582/2268 个营有值。
+         # 其余营（步兵、装甲、工兵…）的描述器上**根本没有**这个字段 ——
+         # 想给它们加上只能克隆描述器再追加，见 ag_edit.grant_attr()。
+         grantable=True),
     #: 防空单位的对空拦截半径。实测只有 130/2268 个营有它，而且**全部是
     #: 图标为 ``AA`` 的地面防空营** —— 交叉验证很干净（``AA_air`` 那 45 个
     #: 空中单位反而没有）。取值只有 12.0（126 个）/ 6.6（2 个）/ 36.0（2 个），
     #: 12.0 那一个模块被 126 个营共用，改它要克隆。
     Attr("air_deny", "防空半径", "TStrategicBattleModuleDescriptor",
-         "AirDenyRadiusInAPCase", "float", "部署后对空拦截，单位 AP"),
+         "AirDenyRadiusInAPCase", "float", "部署后对空拦截，单位 AP",
+         grantable=True),
     Attr("battle_role", "战斗角色", "TStrategicBattleModuleDescriptor",
          "BattleRole", "int", "整数，语义待游戏内验证"),
     Attr("ap_recovery", "AP 恢复", "TActionPointsModuleDescriptor",
@@ -155,6 +178,58 @@ ATTRS: tuple[Attr, ...] = (
     Attr("country", "国家", "TTypeUnitModuleDescriptor", "MotherCountry",
          "str", "结构化字段"),
 )
+
+
+def choice_values(nd: NdfDocument, attr: Attr) -> list[str]:
+    """一个「换引用」型属性的可选值，**全部来自文件里已有的取值**。
+
+    不凭空构造字符串：``strg_ref`` 只编码下标（STRG 表里没有的名字写不进去），
+    图标则必须是已经存在的成对纹理名。所以可选值就是「数据里出现过的那些」。
+
+    * 移动方式 → 六个 ``StrategicMovementDescriptor_*``（实测与 STRG 池一致）；
+    * 部队类型 → 十七种图标类型（从 2265 个载体的 ``Values`` 归一）；
+    * 国家 → ``MotherCountry`` 的十四个取值。
+    """
+    if attr.kind == "icon":
+        return icon_kinds(nd)
+    got: set[str] = set()
+    for obj in nd.decoded["objects"]:
+        if obj.get("class") != attr.module:
+            continue
+        s = _text(obj, attr.field)
+        if s:
+            got.add(s)
+    return sorted(got, key=str.lower)
+
+
+def icon_kinds(nd: NdfDocument) -> list[str]:
+    """数据里实际用到的图标类型名（去前缀），如 ``howitzer`` / ``AA_air``。
+
+    实测 17 种，每种两个变体（``Texture_STRATEGIC_RTS_H_x`` 与
+    ``Texture_STRATEGIC_x``）—— **同一类型的两个画法，不是两种类型**。
+    """
+    kinds: set[str] = set()
+    for obj in nd.decoded["objects"]:
+        if obj.get("class") != ICON_CARRIER:
+            continue
+        vals = _prop(obj, "Values")
+        items = (vals or {}).get("items") or ()
+        texts = [it.get("value") for it in items if isinstance(it, dict)]
+        for s in texts:
+            if isinstance(s, str) and s.startswith(_ICON_BASE):
+                kinds.add(s[len(_ICON_BASE):])
+    # ``RTS_H_x`` 去掉前缀后剩下 ``RTS_H_x``，要再剥一层
+    return sorted({k[len("RTS_H_"):] if k.startswith("RTS_H_") else k
+                   for k in kinds}, key=str.lower)
+
+
+def icon_textures(kind: str) -> tuple[str, str]:
+    """类型名 → 成对的两个纹理名。
+
+    ``Values`` 是**两元素列表**，改的时候必须两个一起改 —— 只改一个会让
+    战略地图上的某个视图换成别的图标（H 版与非 H 版是两个显示场景）。
+    """
+    return (_ICON_H + kind, _ICON_BASE + kind)
 
 #: 名称维度 —— 从 ``DeckIdentifier`` 切出来的三个虚拟字段。
 NAME_KEYS = ("name_country", "parent", "unit")
@@ -189,6 +264,16 @@ class PawnView:
     modules: dict = dc_field(default_factory=dict)
     #: 模块类名 -> 该模块对象被多少个营共用（1 = 独有，可原地改）
     sharing: dict = dc_field(default_factory=dict)
+    #: 属性 key -> 值真正寄居的对象 id。目前只有图标用它：
+    #: ``TStrategicLabelModuleDescriptor.BackgroundTexture`` 是个 obj_ref，
+    #: 而图标名存在**它指向的载体**的 ``Values`` 里。
+    #:
+    #: 为什么必须单独带出来、而不是从 ``ObjEntry.refs`` 取：
+    #: ``BackgroundTexture`` 被 ``DENY_SUBSTRINGS`` 里的 ``"texture"`` 挡住了，
+    #: **进不了模型**（这是对的——通用编辑器不该让人把它指向任意对象）。
+    #: 专用页只需要「换成已有的 17 种之一」，所以走这条受控通道，
+    #: 不去放宽全局过滤。
+    carriers: dict = dc_field(default_factory=dict)
 
     @property
     def is_unit(self) -> bool:
@@ -318,6 +403,7 @@ def build_pawns(nd: NdfDocument) -> list[PawnView]:
         mod_ids = module_ids(obj)
         modules: dict[str, int] = {}
         sharing: dict[str, int] = {}
+        carriers: dict[str, int] = {}
         values: dict = {}
         for mid in mod_ids:
             m = by_id.get(mid)
@@ -330,6 +416,10 @@ def build_pawns(nd: NdfDocument) -> list[PawnView]:
                 got = _read_attr(attr, m, by_id)
                 if got is not None:
                     values[attr.key] = got
+                if attr.kind == "icon":
+                    cid = _ref_id(m, attr.field)
+                    if cid is not None:
+                        carriers[attr.key] = cid
 
         ident = ""
         for cname in ("TDeckModuleDescriptor",):
@@ -350,6 +440,7 @@ def build_pawns(nd: NdfDocument) -> list[PawnView]:
             values=values,
             modules=modules,
             sharing=sharing,
+            carriers=carriers,
         ))
     return out
 

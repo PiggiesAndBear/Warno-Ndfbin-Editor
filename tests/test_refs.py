@@ -55,7 +55,7 @@ def prop_of(dec, obj_id, name):
 
 
 def main() -> int:
-    app = QApplication.instance() or QApplication([])
+    app = _env.qt_app()
 
     print("\n=== 1. 引用字段被收进对象条目 ===")
     nd = NdfDocument.load(SRC / "Unit.ndfbin")
