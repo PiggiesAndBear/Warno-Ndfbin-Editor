@@ -134,6 +134,12 @@ ATTRS: tuple[Attr, ...] = (
          "BackgroundTexture", "icon", "战略地图图标"),
     Attr("support_radius", "支援半径", "TStrategicBattleModuleDescriptor",
          "BattleSupportRadiusInAPCase", "float", "炮兵支援，单位 AP"),
+    #: 防空单位的对空拦截半径。实测只有 130/2268 个营有它，而且**全部是
+    #: 图标为 ``AA`` 的地面防空营** —— 交叉验证很干净（``AA_air`` 那 45 个
+    #: 空中单位反而没有）。取值只有 12.0（126 个）/ 6.6（2 个）/ 36.0（2 个），
+    #: 12.0 那一个模块被 126 个营共用，改它要克隆。
+    Attr("air_deny", "防空半径", "TStrategicBattleModuleDescriptor",
+         "AirDenyRadiusInAPCase", "float", "部署后对空拦截，单位 AP"),
     Attr("battle_role", "战斗角色", "TStrategicBattleModuleDescriptor",
          "BattleRole", "int", "整数，语义待游戏内验证"),
     Attr("ap_recovery", "AP 恢复", "TActionPointsModuleDescriptor",
