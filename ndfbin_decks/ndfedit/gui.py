@@ -52,8 +52,9 @@ from PySide6.QtWidgets import (
 
 from .. import APP_TITLE, paths
 from ..core import writer
-from . import entity, modpicker, refs
+from . import ag_view, entity, modpicker, refs
 from .ammo import AMMO_CLASS, AmmoTitles
+from .ag_page import AgPage
 from .ammo_page import AmmoEditorDialog
 from .schema import ClassInfo, NdfDocument, ObjEntry, humanize
 
@@ -2619,6 +2620,7 @@ class MainWindow(QMainWindow):
         self.tool_box = QComboBox()
         self.tool_box.setToolTip("面向特定数据的专用编辑页")
         self.tool_box.addItem("编辑弹药", "ammo")
+        self.tool_box.addItem("编辑牌组属性", "ag")
         self.tool_box.currentIndexChanged.connect(self._on_tool_changed)
         self.btn_tool = QPushButton("编辑弹药")
         self.btn_tool.setToolTip(
@@ -2646,6 +2648,14 @@ class MainWindow(QMainWindow):
     def _on_tool_changed(self):
         text = self.tool_box.currentText()
         self.btn_tool.setText(text)
+        if self.tool_box.currentData() == "ag":
+            self.btn_tool.setToolTip(
+                "将军模式营的战略属性：部队类型、移动方式、行动点、"
+                "炮兵支援范围。\n需要打开 Pawn.ndfbin。")
+        else:
+            self.btn_tool.setToolTip(
+                "按字段值筛选弹药并批量修改。\n"
+                "例如：把所有「对地射程 = 1925」的 Shell 统一改成 2100。")
 
     # ---- 主体 ----
 
@@ -2738,6 +2748,8 @@ class MainWindow(QMainWindow):
         kind = self.tool_box.currentData()
         if kind == "ammo":
             self.open_ammo_editor()
+        elif kind == "ag":
+            self.open_ag_editor()
 
     def open_ammo_editor(self) -> "AmmoEditorDialog | None":
         """打开弹药专用页。非模态，改动与主界面共用同一份数据。"""
@@ -2755,6 +2767,31 @@ class MainWindow(QMainWindow):
             # 主界面底部的「已改动 N 个对象」和保存按钮得跟上。
             dlg.finished.connect(lambda _code: self._on_entry_dirty())
             self._tool_windows["ammo"] = dlg
+        else:
+            dlg.reload()
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
+        return dlg
+
+    def open_ag_editor(self) -> "AgPage | None":
+        """打开将军模式牌组属性页。非模态，与主界面共用同一份数据。
+
+        要求打开的是 ``Pawn.ndfbin``：战略属性全在那一个文件里，
+        ``Deck.ndfbin`` 只装编制。开错文件时给一句人话，而不是弹一个空表。
+        """
+        if ag_view.PAWN_CLASS not in self.nd.class_names:
+            QMessageBox.information(
+                self, "这个文件里没有将军模式营",
+                f"{self.nd.path.name} 里没有 {ag_view.PAWN_CLASS}。\n\n"
+                "将军模式的战略属性定义在 Pawn.ndfbin 里——换一个文件再试。")
+            return None
+        dlg = self._tool_windows.get("ag")
+        if dlg is None:
+            dlg = AgPage(self.nd, self)
+            # 关掉时也刷一次：主界面底部的「已改动 N 个对象」得跟上。
+            dlg.finished.connect(lambda _code: self._on_entry_dirty())
+            self._tool_windows["ag"] = dlg
         else:
             dlg.reload()
         dlg.show()

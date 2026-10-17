@@ -59,10 +59,13 @@ def main() -> int:
     win = MainWindow()
     win.resize(1500, 860)
     check("有专用编辑器下拉框", hasattr(win, "tool_box"))
+    # 断言「有这一项」，不是「只有这一项」—— 专用编辑页会越来越多，
+    # 精确相等会让每新增一个页面都误报一次。
     check("下拉框里有「编辑弹药」",
-          [win.tool_box.itemText(i) for i in range(win.tool_box.count())]
-          == ["编辑弹药"], str([win.tool_box.itemText(i)
-                                for i in range(win.tool_box.count())]))
+          "编辑弹药" in [win.tool_box.itemText(i)
+                         for i in range(win.tool_box.count())],
+          str([win.tool_box.itemText(i)
+               for i in range(win.tool_box.count())]))
     check("按钮文字跟随下拉框", win.btn_tool.text() == "编辑弹药",
           win.btn_tool.text())
 

@@ -280,6 +280,13 @@ class ObjEntry:
     #: 本地化哈希（``Name`` / ``Caliber`` / ``TypeCategoryName``）。
     #: **不可逆**——没有「输入新值」这种操作，只能从别的对象身上照抄。
     hashes: dict[str, HashField] = field(default_factory=dict)
+    #: **只读**的可读标识，不参与编辑。
+    #:
+    #: ``DeckIdentifier`` 这类字段被 :func:`_editable_text` 判为标识符而挡在
+    #: 六个可编辑容器之外——这个判定是对的（改了会断掉 deck ↔ pawn 的连接），
+    #: 但专用页需要**读**它来认人。这里留一份副本：界面上只显示、不给控件，
+    #: 也不进 :attr:`dirty`。
+    meta: dict[str, str] = field(default_factory=dict)
     #: 供人辨认的附加信息，如「被 605 把武器引用」。
     subtitle: str = ""
     #: 玩家真正看到的名字。
@@ -604,6 +611,8 @@ class NdfDocument:
         strs: dict[str, StrField] = {}
         str_lists: dict[str, StrListField] = {}
         hashes: dict[str, HashField] = {}
+        #: 只读标识（见 :attr:`ObjEntry.meta`）。
+        meta: dict[str, str] = {}
         # 每一层都要取到本类的那张表——``counts.xxx`` 的第一层键是类名。
         # defaultdict 会在取的时候顺手建一个空表，所以克隆一个从未见过的
         # 类也不会炸（只是那个对象的字段表是空的）。
@@ -650,6 +659,13 @@ class NdfDocument:
                         coverage=h_cnt[pname] / total)
                 continue
             if pname not in s_cnt:
+                # 不在任何一个**可编辑**桶里。最常见的成因是被
+                # ``_editable_text`` 判为标识符挡掉了（``DeckIdentifier``）——
+                # 它不该给玩家改，但专用页要读它认人，所以留一份只读副本。
+                if isinstance(v, dict) and is_str_ref(v):
+                    txt = v.get("value")
+                    if isinstance(txt, str) and txt:
+                        meta[pname] = txt
                 continue
             got = is_scalar(v)
             if got is None:
@@ -662,7 +678,8 @@ class NdfDocument:
                 coverage=s_cnt[pname] / total)
         return ObjEntry(object_id=obj["id"], class_name=cname,
                         fields=fields, refs=refs, ref_lists=ref_lists,
-                        strs=strs, str_lists=str_lists, hashes=hashes)
+                        strs=strs, str_lists=str_lists, hashes=hashes,
+                        meta=meta)
 
     # ---- 定制钩子 ----
 
