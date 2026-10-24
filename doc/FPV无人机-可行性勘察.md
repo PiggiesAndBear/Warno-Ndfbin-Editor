@@ -239,3 +239,126 @@ CapaciteTargetFilter_ennemi                is 1    ★ 只能选敌人
 
 **唯一做不到的是真·碰撞伤害** —— 没有"撞上去自动炸"这种引擎行为，
 所以最终手感是「飞到跟前、点一下、爆」，而不是「一头撞上去」。这一点需要提前接受。
+
+---
+
+# 九、路径 D（你提的方案）：短射程武器 + 开火自毁
+
+> 方案：给 FPV 一个射程极短的武器，俯冲攻击，**开火后（弹药归零）消失**；
+> 出场方式是从载具里卸下来。
+
+**结论：攻击方式三段全部成立，且都有原版先例。出场方式有一个硬冲突。**
+
+## 9.1 攻击方式：可行 ✅
+
+| 需求 | 实现 | 原版证据 |
+|---|---|---|
+| 射程极短 | `TAmmunitionDescriptor.MaximumRangeGRU` | 947 个弹药里最小 **150**，中位 1925；`MinimumRangeGRU` 允许 0（198 个用了 0） |
+| 开火后消失 | `TConditionTimeAfterShot`（`Duration` 可自定义）+ `Trigger=automatic` 技能 + `SelfEffect = UnitEffect_Destruction` | **`Capacite_Artillerie_tag_on_shoot`**：automatic + `ConditionTimeAfterShot_15000` + `TargetMySelf`，炮兵开火后自动给自己打 tag |
+| 俯冲 | `AirplaneMovementDescriptor.AltitudeMinGRU` | Pero 用 `AltitudeGRU=525 / AltitudeMinGRU=100`；**这两个值就是普通数字，可改** |
+| 打穿坦克 | 弹药 `PiercingWeapon` / `TandemCharge` / `PhysicalDamages` | 都是 `TAmmunitionDescriptor` 的现成字段 |
+
+### 关键：`ConditionTimeAfterShot` 是可复制的
+
+```ndf
+ConditionTimeAfterShot_15000 is TConditionTimeAfterShot
+(
+    DescriptorId = GUID:{...}
+    Duration = 15          ← 就这一个参数，秒
+)
+```
+
+自建一个 `Duration = 1` 的版本即可。`Duration` 的语义按 `tag_on_shoot` 的用法推断是
+「开火后 N 秒内条件为真」，也就是**开火瞬间技能就被触发**；若实测发现是「等 N 秒」，
+把 `Duration` 改成 1 一样能达到「开火后立刻消失」。
+
+### 自毁技能草案
+
+```ndf
+export Capacite_FPV_Expend is TCapaciteDescriptor
+(
+    DescriptorId   = GUID:{...}
+    Name           = "FPV_Expend"
+    StackPolicy    = ~/CapacityStackPolicy_never
+    Trigger        = ~/CapacityTriggerType_automatic          // 不用玩家点，开火即触发
+    RangeGRU       = 0
+    CastTime       = 0.00
+    SelfEffect     = ~/UnitEffect_Destruction                 // 就是那条 RemoveUnit
+    CapacityDuration = -1.00
+    TargetInSelf   = False
+    TargetMySelf   = True
+    Conditions     = [ ~/ConditionTimeAfterShot_1, ]
+)
+```
+
+配一枚只有 **1 发**（`ShotsCountPerSalvo = 1` + 单发弹匣）的短射程弹药：
+**开火 → 弹药归零 → 同一帧触发条件 → 自毁**。视觉上就是「撞上去炸了」。
+
+> 比路径 A 好在哪：不需要玩家点技能，操作是「选中 → 右键攻击目标」，
+> 与普通单位完全一致；而且 `ConditionTimeAfterShot` 有现成先例，比 A 的
+> 「SelfEffect 对自己造成伤害」更确定。
+
+## 9.2 出场方式：这里有硬冲突 ⚠️
+
+**`Flying` 单位在原版里从不可被运输。**
+
+把 `UniteDescriptor.ndf` 的 2898 个单位按 `PathfindType × 是否带 TTransportableModuleDescriptor` 交叉：
+
+| PathfindType | 可被运输 | 数量 |
+|---|---|---|
+| Infantry | ✅ | 1080 |
+| Vehicle | ✅ | 36 |
+| AmphibiousVehicle | ✅ | 14 |
+| **Flying** | **❌** | **0 / 637** |
+
+而 `TTransportableModuleDescriptor` 本身只有三个字段（`TransportedTexture` /
+`TransportedSoldier` / `NbSeatsOccupied`），**没有任何"只限地面单位"的开关**，
+运输资格是靠载具的 `TransportableTagSet` 做标签匹配的。
+
+所以：
+
+- **数据层面没有禁止**「给一架固定翼/无人机加运输模块」；
+- 但**原版一次都没这么做过**，引擎有没有在别处硬性拦住（比如装载时校验 pathfind 类型），**数据回答不了，只能实测**。
+
+### 三条出路
+
+| | 做法 | 代价 |
+|---|---|---|
+| **D1** | 给 FPV 加 `TTransportableModuleDescriptor`，让运输载具的 `TransportableTagSet` 认它 | **风险最高，收益最大**。半天就能试出来；成功就完全符合你的设想 |
+| **D2** | FPV 不运输，用 `TDeploymentShiftModuleDescriptor` 从地图外飞入（空降仓那套） | 稳，但没有"从车里卸下"的动作，观感是「从后方飞过来」 |
+| **D3** | FPV 做成 `Vehicle`（地面小车/发射箱），可运输，但放弃俯冲 | 只剩"地面撞上去"，最不像 FPV |
+
+**建议顺序：先试 D1（半天），不成立退 D2。**
+
+D1 的具体试法（最小验证，不碰美术）：
+
+```
+1. 复制 Pero_UAV 的整块定义
+2. 加一个 TTransportableModuleDescriptor（NbSeatsOccupied = 1）
+3. 找一个能装 Vehicle 的运输载具，把 FPV 的 tag 加进它的 TransportableTagSet
+4. 进游戏：能不能装载？装载后能不能开出去？
+```
+
+只要第 4 步能装上，D1 就成立，后面全是调参。
+
+## 9.3 还需要实测的三点
+
+1. **`AltitudeMinGRU` 能不能压到 10~30**
+   Pero 是 100。压低之后会不会因为"飞机不能贴地"被引擎拉回 100，未知。
+   如果拉不回来，「俯冲」就变成「低空平飞开火」。
+2. **`ConditionTimeAfterShot` 是「开火瞬间触发」还是「等 N 秒」**
+   两种语义都能用（改 `Duration`），但决定手感是「一撞就炸」还是「炸完还飞 1 秒」。
+3. **D1 的装载校验**（见上）
+
+## 9.4 与路径 A 的对比
+
+| | A：自爆技能 | **D：武器 + 开火自毁** |
+|---|---|---|
+| 操作 | 选中 → 点技能 → 选目标 | **选中 → 右键攻击**（与普通单位一致） |
+| 手感 | 像"自爆" | **像"撞上去"**（有射程 150，几乎贴脸） |
+| 依赖实测 | SelfEffect 打自己是否扣血 | `ConditionTimeAfterShot` 语义 + 运输校验 |
+| 与"弹药归零"的吻合度 | 无弹药概念 | **完全吻合**（1 发弹，打完即毁） |
+
+**你的方案比我原来推荐的 A 更好** —— 它把"消失"挂在了开火上，不需要玩家额外操作，
+而且 `ConditionTimeAfterShot` 有 `tag_on_shoot` 这个直接可抄的先例。
+
