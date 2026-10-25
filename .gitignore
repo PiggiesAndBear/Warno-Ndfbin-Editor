@@ -31,6 +31,10 @@ venv/
 # narrow.
 doc/*勘查报告.md
 
+# The FPV drone ToDo belongs to the mod project that implements it, not to this
+# editor's repository.  Kept here only as a local working copy.
+doc/FPV_ToDo.md
+
 # --- third-party material --------------------------------------------------
 # A decompiled copy of someone else's moddingSuite, its installer and tutorial
 # documents, and the IL dumps taken beside them.  Useful while working out the
